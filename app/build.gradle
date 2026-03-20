@@ -13,36 +13,12 @@ plugins {
     alias(libs.plugins.spotbugs)
     id 'pmd'
     alias(libs.plugins.protobuf)
+    id 'com.diffplug.spotless' version '8.3.0'
 }
 
 repositories {
     // Use Maven Central for resolving dependencies.
     mavenCentral()
-}
-
-/*
- * Quick-fix for Netty version conflicts:
- *
- * Lettuce (and some libraries) expect Netty 4.1.x while Spring Boot pulled a different
- * netty-common (4.2.x) transitively. Mixed Netty versions cause AbstractMethodError at runtime.
- *
- * This forces all io.netty artifacts to use a single, compatible version used by Lettuce.
- * If you prefer a cleaner long-term solution, consider aligning/upgrading Lettuce or
- * excluding netty from the Spring Boot netty starter and managing version explicitly.
- */
-configurations.all {
-    resolutionStrategy.force(
-        "io.netty:netty-common:4.1.118.Final",
-        "io.netty:netty-buffer:4.1.118.Final",
-        "io.netty:netty-transport:4.1.118.Final",
-        "io.netty:netty-codec:4.1.118.Final",
-        "io.netty:netty-handler:4.1.118.Final",
-        "io.netty:netty-codec-http:4.1.118.Final",
-        "io.netty:netty-resolver:4.1.118.Final",
-        "io.netty:netty-resolver-dns:4.1.118.Final",
-        "io.netty:netty-transport-native-unix-common:4.1.118.Final",
-        "io.netty:netty-codec-dns:4.1.118.Final"
-    )
 }
 
 dependencies {
@@ -189,12 +165,24 @@ tasks.named('pmdTest').configure {
 
 // Make check depend on all quality checks
 tasks.named('check').configure {
+    dependsOn tasks.named('spotlessCheck')
     dependsOn tasks.named('checkstyleMain')
     dependsOn tasks.named('checkstyleTest')
     dependsOn tasks.named('spotbugsMain')
     dependsOn tasks.named('spotbugsTest')
     dependsOn tasks.named('pmdMain')
     dependsOn tasks.named('pmdTest')
+}
+
+spotless {
+    java {
+        // Only format real source
+        target 'src/main/java/**/*.java', 'src/test/java/**/*.java'
+        // Skip all build & generated code
+        targetExclude 'build/**', '**/build/**', 'build/generated/**'
+
+        googleJavaFormat()
+    }
 }
 
 def grpcVersion = libs.versions.grpc.lib.get()
