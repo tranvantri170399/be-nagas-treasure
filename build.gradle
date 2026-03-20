@@ -1,0 +1,9 @@
+tasks.register("installGitHooks", Exec) {
+    commandLine "sh", "scripts/install-hooks.sh"
+}
+
+allprojects {
+    tasks.matching { it.name == "build" }.configureEach {
+        dependsOn(rootProject.tasks.named("installGitHooks"))
+    }
+}
