@@ -1,0 +1,47 @@
+# Server configuration
+server:
+  port: ${SERVER_PORT:3000}
+  servlet:
+    context-path: ${SERVER_SERVLET_CONTEXT_PATH:/api/game}
+
+# Spring configuration
+spring:
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:}
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://root:secret@localhost:27017/nagas?authSource=admin}
+      database: ${MONGODB_DATABASE:nagas}
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+    username: ${REDIS_USERNAME:default}
+    password: ${REDIS_PASSWORD:}
+    database: ${REDIS_DATABASE:1}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:172.10.10.99}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: ${RABBITMQ_VHOST:/}
+
+# MongoDB configuration
+mongo:
+  pool:
+    min-size: ${MONGO_POOL_MIN_SIZE:0}
+    max-size: ${MONGO_POOL_MAX_SIZE:10}
+    max-connection-idle-time: ${MONGO_POOL_MAX_IDLE:PT1M}
+    max-connection-life-time: ${MONGO_POOL_MAX_LIFETIME:PT5M}
+    max-wait-time: ${MONGO_POOL_MAX_WAIT:PT5S}
+    maintenance-frequency-seconds: ${MONGO_POOL_MAINTENANCE_FREQUENCY:60}
+
+# Redis configuration
+redis:
+  cache:
+    default-ttl: ${REDIS_CACHE_DEFAULT_TTL:PT5M}
+    key-prefix: ${REDIS_CACHE_KEY_PREFIX:game-nags:cache:local}
+
+# ZMQ publisher
+zmq:
+  publisher:
+    address: ${ZMQ_PUBLISHER_ADDRESS:tcp://localhost:5555}

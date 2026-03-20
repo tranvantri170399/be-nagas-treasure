@@ -1,0 +1,59 @@
+<?xml version="1.0"?>
+<!--
+    PMD Ruleset Configuration
+    Based on best practices for Java development
+-->
+<ruleset name="Custom PMD Ruleset"
+         xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0
+         http://pmd.sourceforge.net/ruleset/2.0.0.xsd">
+
+    <description>PMD Ruleset for Java project</description>
+
+    <!-- Best Practices -->
+    <rule ref="category/java/bestpractices.xml">
+        <!-- Exclude some rules if needed -->
+        <!--
+        <exclude name="JUnitTestsShouldIncludeAssert"/>
+        -->
+    </rule>
+
+    <!-- Code Style -->
+    <rule ref="category/java/codestyle.xml">
+        <!-- Exclude some rules if needed -->
+        <!--
+        <exclude name="OnlyOneReturn"/>
+        -->
+    </rule>
+
+    <!-- Design -->
+    <rule ref="category/java/design.xml">
+        <!-- Exclude some rules if needed -->
+        <!--
+        <exclude name="TooManyMethods"/>
+        -->
+    </rule>
+
+    <!-- Error Prone -->
+    <rule ref="category/java/errorprone.xml"/>
+
+    <!-- Performance -->
+    <rule ref="category/java/performance.xml"/>
+
+    <!-- Security -->
+    <rule ref="category/java/security.xml"/>
+
+    <!-- Multithreading -->
+    <rule ref="category/java/multithreading.xml"/>
+
+    <!-- Documentation -->
+    <rule ref="category/java/documentation.xml">
+        <!-- Exclude some rules if needed -->
+        <!--
+        <exclude name="CommentRequired"/>
+        -->
+    </rule>
+
+</ruleset>
+
