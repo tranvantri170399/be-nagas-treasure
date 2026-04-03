@@ -8,27 +8,27 @@ import lombok.Getter;
 @Getter
 @Builder
 public class BuyFeatureCommand {
-    
-    private final String userId;
-    
-    private final String gameId;
-    
-    private final String sessionId;
-    
-    private final String featureName;
 
-    private final Money betAmount;
+  private final String userId;
 
-    public Money calculateTotalCost(double multiplier) {
-        if (betAmount == null) return Money.zero();
-        return betAmount.times(multiplier);
-    }
+  private final String gameId;
 
-    public boolean isBuyHoldAndWin() {
-        return SlotConstants.FEATURE_HOLD_AND_WIN.equalsIgnoreCase(featureName);
-    }
+  private final String sessionId;
 
-    public boolean isBuyFreeSpins() {
-        return SlotConstants.FEATURE_FREE_SPINS.equalsIgnoreCase(featureName);
-    }
+  private final String featureName;
+
+  private final Money betAmount;
+
+  public Money calculateTotalCost(double multiplier) {
+    if (betAmount == null) return Money.zero();
+    return betAmount.times(multiplier);
+  }
+
+  public boolean isBuyHoldAndWin() {
+    return SlotConstants.FEATURE_HOLD_AND_WIN.equalsIgnoreCase(featureName);
+  }
+
+  public boolean isBuyFreeSpins() {
+    return SlotConstants.FEATURE_FREE_SPINS.equalsIgnoreCase(featureName);
+  }
 }

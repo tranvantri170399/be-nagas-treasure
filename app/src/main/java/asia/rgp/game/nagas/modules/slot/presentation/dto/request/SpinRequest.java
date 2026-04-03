@@ -6,21 +6,10 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
 public record SpinRequest(
-        
-        @NotNull(message = "user_id is not null")
-        @JsonProperty("user_id")
-        String userId,
-
-        @NotBlank(message = "game_id is not null")
-        @JsonProperty("game_id")
-        String gameId,
-
-        @NotNull(message = "bet_amount is not null")
+    @NotNull(message = "user_id is not null") @JsonProperty("user_id") String userId,
+    @NotBlank(message = "game_id is not null") @JsonProperty("game_id") String gameId,
+    @NotNull(message = "bet_amount is not null")
         @Min(value = 1, message = "bet_amount > 0")
         @JsonProperty("bet_amount")
         Long betAmount,
-
-        @NotBlank(message = "session_id is not null")
-        @JsonProperty("session_id")
-        String sessionId
-) {}
+    @NotBlank(message = "session_id is not null") @JsonProperty("session_id") String sessionId) {}

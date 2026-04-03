@@ -11,28 +11,29 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class SlotHistoryPersistenceAdapter implements SlotHistoryPort {
 
-    private final MongoSlotHistoryRepository repository;
+  private final MongoSlotHistoryRepository repository;
 
-    @Override
-    public void save(SlotHistory history) {
-        SlotHistoryEntity entity = SlotHistoryEntity.builder()
-                .roundId(history.getRoundId())
-                .parentRoundId(history.getParentRoundId())
-                .round(history.getRound())
-                .subRound(history.getSubRound())
-                .userId(history.getUserId())
-                .gameId(history.getGameId())
-                .sessionId(history.getSessionId())
-                .totalBet(history.getTotalBet())
-                .displayBet(history.getDisplayBet())
-                .totalWin(history.getTotalWin())
-                .balanceAfter(history.getBalanceAfter())
-                .screenData(history.getScreen())
-                .winData(history.getWins())
-                .type(history.getType())
-                .createdAt(history.getCreatedAt())
-                .build();
-        
-        repository.save(entity);
-    }
+  @Override
+  public void save(SlotHistory history) {
+    SlotHistoryEntity entity =
+        SlotHistoryEntity.builder()
+            .roundId(history.getRoundId())
+            .parentRoundId(history.getParentRoundId())
+            .round(history.getRound())
+            .subRound(history.getSubRound())
+            .userId(history.getUserId())
+            .gameId(history.getGameId())
+            .sessionId(history.getSessionId())
+            .totalBet(history.getTotalBet())
+            .displayBet(history.getDisplayBet())
+            .totalWin(history.getTotalWin())
+            .balanceAfter(history.getBalanceAfter())
+            .screenData(history.getScreen())
+            .winData(history.getWins())
+            .type(history.getType())
+            .createdAt(history.getCreatedAt())
+            .build();
+
+    repository.save(entity);
+  }
 }

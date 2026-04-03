@@ -1,57 +1,58 @@
 package asia.rgp.game.nagas.modules.slot.infrastructure.persistence.entity;
 
+import java.time.Instant;
 import lombok.*;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
-import java.time.Instant;
-import java.util.List;
 
 @Document(collection = "slot_histories")
-@Getter @Setter
-@NoArgsConstructor @AllArgsConstructor @Builder
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class SlotHistoryEntity {
-    
-    @Id
-    private String roundId;
 
-    @Field("parent_round_id")
-    private String parentRoundId;
+  @Id private String roundId;
 
-    private int round;
+  @Field("parent_round_id")
+  private String parentRoundId;
 
-    @Field("sub_round")
-    private int subRound;
+  private int round;
 
-    @Field("user_id")
-    private String userId;
+  @Field("sub_round")
+  private int subRound;
 
-    @Field("game_id")
-    private String gameId;
+  @Field("user_id")
+  private String userId;
 
-    @Field("session_id")
-    private String sessionId;
-    
-    @Field("total_bet")
-    private long totalBet;
+  @Field("game_id")
+  private String gameId;
 
-    @Field("display_bet")
-    private long displayBet;
+  @Field("session_id")
+  private String sessionId;
 
-    @Field("total_win")
-    private long totalWin;
+  @Field("total_bet")
+  private long totalBet;
 
-    @Field("balance_after")
-    private long balanceAfter;
+  @Field("display_bet")
+  private long displayBet;
 
-    @Field("screen_data")
-    private int[][] screenData;
+  @Field("total_win")
+  private long totalWin;
 
-    @Field("win_data")
-    private Object winData;
+  @Field("balance_after")
+  private long balanceAfter;
 
-    private String type; // "BASE", "FREE", "BUY"
+  @Field("screen_data")
+  private int[][] screenData;
 
-    @Field("created_at")
-    private Instant createdAt;
+  @Field("win_data")
+  private Object winData;
+
+  private String type; // "BASE", "FREE", "BUY"
+
+  @Field("created_at")
+  private Instant createdAt;
 }
