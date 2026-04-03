@@ -5,9 +5,11 @@ import asia.rgp.game.nagas.modules.slot.application.dto.request.SpinCommand;
 import asia.rgp.game.nagas.modules.slot.presentation.dto.response.SlotResultResponse;
 
 public interface SpinUseCase {
-    SlotResultResponse execute(SpinCommand command);
+  SlotResultResponse execute(SpinCommand command);
 
-    SlotResultResponse executeBuyFeature(BuyFeatureCommand command);
+  SlotResultResponse executeBuyFeature(BuyFeatureCommand command);
 
-    SlotResultResponse executeBuyHoldAndWin(BuyFeatureCommand command);
+  SlotResultResponse executeBuyHoldAndWin(BuyFeatureCommand command);
+
+  SlotResultResponse getInitialState(String userId, String gameId, String sessionId);
 }
