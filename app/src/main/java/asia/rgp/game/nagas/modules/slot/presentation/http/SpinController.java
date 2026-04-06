@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.*;
 
 @Slf4j
 @RestController
-@RequestMapping("/api/v1/slot")
+@RequestMapping("/v1/slot")
 @RequiredArgsConstructor
 @CrossOrigin(origins = "*")
 public class SpinController {
