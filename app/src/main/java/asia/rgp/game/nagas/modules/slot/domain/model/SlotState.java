@@ -20,6 +20,7 @@ public class SlotState implements Serializable {
 
   private static final long serialVersionUID = 1L;
 
+  private String agentId;
   private String userId;
   private String gameId;
   private String sessionId;
@@ -27,6 +28,7 @@ public class SlotState implements Serializable {
   // --- TRACKING ID ---
   private String parentRoundId;
   private String lastRoundId;
+  private String triggerRoundId;
   private int baseRoundNumber;
   private Money baseBet;
 

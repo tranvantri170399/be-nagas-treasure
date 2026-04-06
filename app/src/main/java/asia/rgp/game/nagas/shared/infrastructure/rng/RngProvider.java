@@ -43,7 +43,9 @@ public class RngProvider {
                         id != SlotConstants.SYMBOL_A
                             && id != SlotConstants.SYMBOL_B
                             && id != SlotConstants.SYMBOL_C
-                            && id != SlotConstants.SYMBOL_D)
+                            && id != SlotConstants.SYMBOL_D
+                            && id != SlotConstants.SYMBOL_MAJOR
+                            && id != SlotConstants.SYMBOL_MINI)
                 .collect(Collectors.toList());
       }
 
@@ -82,9 +84,15 @@ public class RngProvider {
     int rows = config.rows();
     int cols = config.cols();
     int[][] grid = new int[rows][cols];
+
+    boolean hasMajor = false;
+    boolean hasMini = false;
+
     if (lockedBonuses != null) {
       for (SlotState.LockedBonus locked : lockedBonuses) {
         grid[locked.getRow()][locked.getCol()] = locked.getSymbolId();
+        if (locked.getSymbolId() == config.majorSymbolId()) hasMajor = true;
+        if (locked.getSymbolId() == config.miniSymbolId()) hasMini = true;
       }
     }
     if (this.random.nextDouble() < 0.15) {
@@ -99,8 +107,8 @@ public class RngProvider {
         int[] pos = emptyCells.get(this.random.nextInt(emptyCells.size()));
         double typeRoll = this.random.nextDouble();
         int newSymbolId;
-        if (typeRoll < 0.03) newSymbolId = config.majorSymbolId();
-        else if (typeRoll < 0.10) newSymbolId = config.miniSymbolId();
+        if (typeRoll < 0.03 && !hasMajor) newSymbolId = config.majorSymbolId();
+        else if (typeRoll < 0.10 && !hasMini) newSymbolId = config.miniSymbolId();
         else newSymbolId = config.bonusSymbolId();
 
         grid[pos[0]][pos[1]] = newSymbolId;
@@ -152,7 +160,7 @@ public class RngProvider {
     return grid;
   }
 
-  private void applyJackpotOverlays(Matrix matrix, SlotGameConfig config, Money currentBet) {
+  public void applyJackpotOverlays(Matrix matrix, SlotGameConfig config, Money currentBet) {
     double cellProbability = 0.12;
     double betFactor = Math.max(1.0, currentBet.getAmount() / 1000.0);
     double finalProb = Math.min(0.25, cellProbability * betFactor);
@@ -172,6 +180,25 @@ public class RngProvider {
 
     if (ringCount == 4 && this.random.nextDouble() < 0.3) {
       forceAddOneRing(matrix, config);
+    }
+  }
+
+  /** Force at least {@code minRings} glowing rings on eligible cells. Used by cheat system. */
+  public void forceJackpotOverlays(Matrix matrix, SlotGameConfig config, int minRings) {
+    int ringCount = 0;
+    for (int r = 0; r < matrix.rows(); r++) {
+      for (int c = 0; c < matrix.cols(); c++) {
+        if (matrix.hasOverlayAt(r, c, "GLOWING_RING")) ringCount++;
+      }
+    }
+    for (int r = 0; r < matrix.rows() && ringCount < minRings; r++) {
+      for (int c = 0; c < matrix.cols() && ringCount < minRings; c++) {
+        int id = matrix.getSymbolAt(r, c);
+        if (isNormalSymbol(id, config) && !matrix.hasOverlayAt(r, c, "GLOWING_RING")) {
+          matrix.setOverlayAt(r, c, "GLOWING_RING", true);
+          ringCount++;
+        }
+      }
     }
   }
 

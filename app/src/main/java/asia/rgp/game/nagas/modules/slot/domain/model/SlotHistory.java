@@ -1,5 +1,6 @@
 package asia.rgp.game.nagas.modules.slot.domain.model;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import lombok.Builder;
@@ -10,17 +11,33 @@ import lombok.Getter;
 public class SlotHistory {
   private final String roundId;
   private final String parentRoundId;
-  private final int round;
-  private final int subRound;
+  private final String agentId;
   private final String userId;
   private final String gameId;
   private final String sessionId;
-  private final long totalBet;
-  private final long displayBet;
-  private final long totalWin;
-  private final long balanceAfter;
+
+  // Mode
+  private final String thisMode;
+  private final String nextMode;
+
+  // Financials
+  private final BigDecimal betAmount;
+  private final BigDecimal totalWin;
+  private final boolean trialMode;
+
+  // Game data
   private final int[][] screen;
   private final List<WinDetail> wins;
-  private final String type;
-  private final Instant createdAt;
+
+  // Bonus state snapshot
+  private final Integer freeSpinsTotal;
+  private final Integer freeSpinsRemain;
+  private final Integer respinsRemain;
+
+  // Jackpot
+  private final String jackpotWonTier;
+  private final BigDecimal jackpotWonAmount;
+  private final BigDecimal jackpotContribution;
+
+  private final Instant timestamp;
 }

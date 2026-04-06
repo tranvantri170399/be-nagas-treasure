@@ -85,6 +85,54 @@ public class HotCacheService {
     return redisTemplate.opsForHash().entries(buildKey(cacheKey));
   }
 
+  // --- ATOMIC HASH OPERATIONS ---
+
+  /**
+   * Atomically reads a hash field value and resets it to a new value. Returns the value BEFORE
+   * reset. Used for jackpot pool claims to prevent double-win race conditions.
+   *
+   * <p>Lua script executes as a single atomic operation on Redis server: no other command can
+   * interleave between the read and write.
+   *
+   * @return the pool amount before reset, or null if field doesn't exist
+   */
+  public String getAndResetHash(String cacheKey, String hashKey, String resetValue) {
+    Assert.hasText(cacheKey, "cacheKey must not be blank");
+    Assert.hasText(hashKey, "hashKey must not be blank");
+
+    final String redisKey = buildKey(cacheKey);
+    final byte[] lua =
+        ("local val = redis.call('HGET', KEYS[1], ARGV[1]) "
+                + "if val then redis.call('HSET', KEYS[1], ARGV[1], ARGV[2]) end "
+                + "return val")
+            .getBytes();
+
+    RedisSerializer<String> keySer = (RedisSerializer<String>) redisTemplate.getStringSerializer();
+    byte[] keyBytes = keySer.serialize(redisKey);
+    byte[] hashKeyBytes = keySer.serialize(hashKey);
+    byte[] resetBytes = keySer.serialize(resetValue);
+
+    try {
+      Object result =
+          redisTemplate.execute(
+              (RedisCallback<Object>)
+                  connection ->
+                      connection.eval(
+                          lua, ReturnType.VALUE, 1, keyBytes, hashKeyBytes, resetBytes));
+      if (result instanceof byte[]) {
+        return new String((byte[]) result);
+      }
+      return result != null ? result.toString() : null;
+    } catch (Exception ex) {
+      log.error(
+          "Lua getAndResetHash failed for key={}, field={}: {}",
+          cacheKey,
+          hashKey,
+          ex.getMessage());
+      return null;
+    }
+  }
+
   // --- GENERAL OPERATIONS ---
 
   public void evict(String cacheKey) {

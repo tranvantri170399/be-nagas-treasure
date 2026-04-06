@@ -7,5 +7,5 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface MongoSlotHistoryRepository extends MongoRepository<SlotHistoryEntity, String> {
-  List<SlotHistoryEntity> findByUserIdOrderByCreatedAtDesc(String userId);
+  List<SlotHistoryEntity> findByAgentIdAndUserIdOrderByTimestampDesc(String agentId, String userId);
 }

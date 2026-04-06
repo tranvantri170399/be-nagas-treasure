@@ -8,29 +8,9 @@ import asia.rgp.game.nagas.shared.domain.model.Money;
  */
 public interface WalletPort {
 
-  /**
-   * Retrieves the current balance of the player.
-   *
-   * @param userId Unique identifier of the player (String to support UUID/External IDs).
-   * @return The current balance in the smallest currency unit (long).
-   */
-  long getBalance(String userId);
+  long getBalance(String agentId, String userId);
 
-  /**
-   * Calls external service to deduct bet amount.
-   *
-   * @param userId Unique identifier of the player.
-   * @param amount The bet amount.
-   * @param transactionId Unique ID for idempotency (Mapping to roundId).
-   */
-  void debit(String userId, Money amount, String transactionId);
+  void debit(String agentId, String userId, Money amount, String transactionId);
 
-  /**
-   * Calls external service to credit win amount.
-   *
-   * @param userId Unique identifier of the player.
-   * @param amount The total win amount.
-   * @param transactionId Unique ID for idempotency.
-   */
-  void credit(String userId, Money amount, String transactionId);
+  void credit(String agentId, String userId, Money amount, String transactionId);
 }

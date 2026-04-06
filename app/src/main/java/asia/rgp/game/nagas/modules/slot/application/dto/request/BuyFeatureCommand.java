@@ -9,6 +9,8 @@ import lombok.Getter;
 @Builder
 public class BuyFeatureCommand {
 
+  private final String agentId;
+
   private final String userId;
 
   private final String gameId;
@@ -18,6 +20,8 @@ public class BuyFeatureCommand {
   private final String featureName;
 
   private final Money betAmount;
+
+  private final boolean trialMode;
 
   public Money calculateTotalCost(double multiplier) {
     if (betAmount == null) return Money.zero();

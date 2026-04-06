@@ -16,14 +16,13 @@ public class PayoutCalculator {
   private final Random random = new Random();
 
   /** Calculates the general payout result for a spin. */
-  public PayoutResult calculate(
-      Matrix matrix, SlotGameConfig config, Money betPerLine, Money totalBet) {
+  public PayoutResult calculate(Matrix matrix, SlotGameConfig config, Money totalBet) {
     log.info("=== START PAYOUT CALCULATION ===");
     List<WinDetail> wins = new ArrayList<>();
 
     // 1. Calculate Line Wins (Base Game)
     if (config.payoutType() == PayoutType.LINE) {
-      wins.addAll(calculateAllPaylines(matrix, config, betPerLine));
+      wins.addAll(calculateAllPaylines(matrix, config, totalBet));
     }
 
     // 2. Calculate Scatter Wins
@@ -86,11 +85,11 @@ public class PayoutCalculator {
   }
 
   private List<WinDetail> calculateAllPaylines(
-      Matrix matrix, SlotGameConfig config, Money betPerLine) {
+      Matrix matrix, SlotGameConfig config, Money totalBet) {
     List<WinDetail> lineWins = new ArrayList<>();
     for (int i = 0; i < config.paylines().size(); i++) {
       WinDetail win =
-          calculateSingleLineWinDetail(matrix, config.paylines().get(i), i + 1, config, betPerLine);
+          calculateSingleLineWinDetail(matrix, config.paylines().get(i), i + 1, config, totalBet);
       if (win != null) {
         lineWins.add(win);
       }
@@ -99,7 +98,7 @@ public class PayoutCalculator {
   }
 
   private WinDetail calculateSingleLineWinDetail(
-      Matrix matrix, Payline line, int lineId, SlotGameConfig config, Money betPerLine) {
+      Matrix matrix, Payline line, int lineId, SlotGameConfig config, Money totalBet) {
     int baseId = -1;
     int match = 0;
     final int WILD_10 = 10;
@@ -139,7 +138,7 @@ public class PayoutCalculator {
     double multiplier = sym.getMultiplier(match);
     if (multiplier <= 0) return null;
 
-    Money winAmount = betPerLine.times(multiplier);
+    Money winAmount = totalBet.times(multiplier);
 
     log.info(
         "[Line Win] Line: #{}, Symbol: {}, Match: {}, Multiplier: {}, Win: {}",
