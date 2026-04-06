@@ -14,52 +14,50 @@ import org.springframework.stereotype.Component;
 public class MockWalletAdapter implements WalletPort {
   private final Map<String, Long> userBalances = new ConcurrentHashMap<>();
 
-  public MockWalletAdapter() {
-    userBalances.put("1", 10000000L);
+  private String walletKey(String agentId, String userId) {
+    return agentId + ":" + userId;
   }
 
   @Override
-  public long getBalance(String userId) {
-    return userBalances.computeIfAbsent(userId, k -> 10000000L);
+  public long getBalance(String agentId, String userId) {
+    return userBalances.computeIfAbsent(walletKey(agentId, userId), k -> 10000000L);
   }
 
   @Override
-  public void debit(String userId, Money amount, String transactionId) {
-    long currentBalance = getBalance(userId);
+  public void debit(String agentId, String userId, Money amount, String transactionId) {
+    String key = walletKey(agentId, userId);
+    long currentBalance = getBalance(agentId, userId);
     long debitAmount = Math.round(amount.getAmount() * 100.0);
 
     log.info(
-        "[MockWallet] DEBIT | User: {} | Amount (Real): {} | Amount (Internal): -{} | TX: {}",
+        "[MockWallet] DEBIT | Agent: {} | User: {} | Amount: -{} | TX: {}",
+        agentId,
         userId,
-        amount.getAmount(),
         debitAmount,
         transactionId);
 
     if (currentBalance < debitAmount) {
-      log.warn("[MockWallet] DEBIT FAILED | Insufficient balance for user {}", userId);
-      throw new DomainException(
-          "Số dư không đủ để thực hiện vòng quay", ErrorCode.INSUFFICIENT_BALANCE);
+      throw new DomainException("Insufficient balance for spin", ErrorCode.INSUFFICIENT_BALANCE);
     }
 
     long newBalance = currentBalance - debitAmount;
-    userBalances.put(userId, newBalance);
-    log.info("[MockWallet] BALANCE UPDATED | User: {} | New Balance: {}", userId, newBalance);
+    userBalances.put(key, newBalance);
   }
 
   @Override
-  public void credit(String userId, Money amount, String transactionId) {
-    long currentBalance = getBalance(userId);
+  public void credit(String agentId, String userId, Money amount, String transactionId) {
+    String key = walletKey(agentId, userId);
+    long currentBalance = getBalance(agentId, userId);
     long creditAmount = Math.round(amount.getAmount() * 100.0);
 
     log.info(
-        "[MockWallet] CREDIT | User: {} | Amount (Real): {} | Amount (Internal): +{} | TX: {}",
+        "[MockWallet] CREDIT | Agent: {} | User: {} | Amount: +{} | TX: {}",
+        agentId,
         userId,
-        amount.getAmount(),
         creditAmount,
         transactionId);
 
     long newBalance = currentBalance + creditAmount;
-    userBalances.put(userId, newBalance);
-    log.info("[MockWallet] BALANCE UPDATED | User: {} | New Balance: {}", userId, newBalance);
+    userBalances.put(key, newBalance);
   }
 }

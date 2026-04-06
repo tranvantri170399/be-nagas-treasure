@@ -1,10 +1,13 @@
 package asia.rgp.game.nagas.modules.slot.application.usecase;
 
+import asia.rgp.game.nagas.infrastructure.debug.CheatCode;
+import asia.rgp.game.nagas.infrastructure.debug.CheatService;
 import asia.rgp.game.nagas.modules.slot.application.dto.request.BuyFeatureCommand;
 import asia.rgp.game.nagas.modules.slot.application.dto.request.SpinCommand;
 import asia.rgp.game.nagas.modules.slot.application.port.in.SpinUseCase;
 import asia.rgp.game.nagas.modules.slot.application.port.out.*;
 import asia.rgp.game.nagas.modules.slot.domain.model.*;
+import asia.rgp.game.nagas.modules.slot.domain.model.JackpotHistory;
 import asia.rgp.game.nagas.modules.slot.domain.service.JackpotService;
 import asia.rgp.game.nagas.modules.slot.domain.service.PayoutCalculator;
 import asia.rgp.game.nagas.modules.slot.infrastructure.persistence.adapter.SlotStateRepository;
@@ -15,18 +18,18 @@ import asia.rgp.game.nagas.shared.domain.model.Matrix;
 import asia.rgp.game.nagas.shared.domain.model.Money;
 import asia.rgp.game.nagas.shared.error.ErrorCode;
 import asia.rgp.game.nagas.shared.infrastructure.rng.RngProvider;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class SpinUseCaseImpl implements SpinUseCase {
 
   private final WalletPort walletPort;
@@ -37,17 +40,50 @@ public class SpinUseCaseImpl implements SpinUseCase {
   private final SlotHistoryPort historyPort;
   private final SlotStateRepository stateRepository;
   private final JackpotService jackpotService;
+  private final JackpotHistoryPort jackpotHistoryPort;
+
+  // Null in production — only injected when dev/staging profile active
+  private final CheatService cheatService;
+
+  public SpinUseCaseImpl(
+      WalletPort walletPort,
+      DistributedLockService lockService,
+      PayoutCalculator payoutCalculator,
+      RngProvider rngProvider,
+      GameConfigPort configPort,
+      SlotHistoryPort historyPort,
+      SlotStateRepository stateRepository,
+      JackpotService jackpotService,
+      JackpotHistoryPort jackpotHistoryPort,
+      @Autowired(required = false) CheatService cheatService) {
+    this.walletPort = walletPort;
+    this.lockService = lockService;
+    this.payoutCalculator = payoutCalculator;
+    this.rngProvider = rngProvider;
+    this.configPort = configPort;
+    this.historyPort = historyPort;
+    this.stateRepository = stateRepository;
+    this.jackpotService = jackpotService;
+    this.jackpotHistoryPort = jackpotHistoryPort;
+    this.cheatService = cheatService;
+  }
 
   @Override
   public SlotResultResponse execute(SpinCommand command) {
-    var stateOpt = stateRepository.find(command.getUserId(), command.getGameId());
+    String agentId = command.getAgentId();
+    var stateOpt = stateRepository.find(agentId, command.getUserId(), command.getGameId());
     boolean isFS = stateOpt.isPresent() && stateOpt.get().isFreeSpinMode();
     boolean isHW = stateOpt.isPresent() && stateOpt.get().isHoldAndWinMode();
+
+    if (!isFS && !isHW) {
+      validateBetAmount(command.getBetAmount());
+    }
 
     Money displayBet = (isFS || isHW) ? stateOpt.get().getBaseBet() : command.getBetAmount();
     Money debitAmount = (isFS || isHW) ? Money.zero() : command.getBetAmount();
 
     return handleSpin(
+        agentId,
         command.getGameId(),
         command.getUserId(),
         command.getSessionId(),
@@ -57,10 +93,12 @@ public class SpinUseCaseImpl implements SpinUseCase {
         false,
         isFS,
         isHW,
-        stateOpt.orElse(null));
+        stateOpt.orElse(null),
+        command.isTrialMode());
   }
 
   private SlotResultResponse handleSpin(
+      String agentId,
       String gameId,
       String userId,
       String sessionId,
@@ -70,7 +108,8 @@ public class SpinUseCaseImpl implements SpinUseCase {
       boolean isBuyHW,
       boolean wasFreeSpin,
       boolean wasHoldAndWin,
-      SlotState currentState) {
+      SlotState currentState,
+      boolean trialMode) {
 
     SlotGameConfig config =
         configPort
@@ -78,15 +117,19 @@ public class SpinUseCaseImpl implements SpinUseCase {
             .orElseThrow(
                 () -> new DomainException("Game config not found", ErrorCode.GAME_NOT_FOUND));
     String transactionId = UUID.randomUUID().toString();
-    String lockKey = "spin:" + sessionId;
+    String lockKey = "spin:" + agentId + ":" + sessionId;
 
+    // parentRoundId: null for BASE spin, triggerRoundId for FS/HW spins
     final String parentTid =
-        (currentState != null) ? currentState.getParentRoundId() : transactionId;
-    // Ensure round counter is not null
+        (wasFreeSpin || wasHoldAndWin)
+                && currentState != null
+                && currentState.getTriggerRoundId() != null
+            ? currentState.getTriggerRoundId()
+            : null;
     final int baseRound =
         (currentState != null)
             ? currentState.getBaseRoundNumber()
-            : (int) lockService.increment("round_counter:" + sessionId);
+            : (int) lockService.increment("round_counter:" + agentId + ":" + sessionId);
 
     Map<String, Object> idWrapper = new HashMap<>();
     idWrapper.put("sessionId", sessionId);
@@ -95,46 +138,82 @@ public class SpinUseCaseImpl implements SpinUseCase {
 
     Supplier<SlotResultResponse> spinTask =
         () -> {
-          if (actualDebit.isGreaterThanZero()) {
-            walletPort.debit(userId, actualDebit, transactionId);
-            jackpotService.contribute(actualDebit);
+          boolean isBaseSpin = !wasFreeSpin && !wasHoldAndWin && !isBuyFS && !isBuyHW;
+
+          if (!trialMode && actualDebit.isGreaterThanZero()) {
+            walletPort.debit(agentId, userId, actualDebit, transactionId);
+            // GDD 8.3: Jackpot contribution only during base spin
+            if (isBaseSpin) {
+              jackpotService.contribute(agentId, actualDebit);
+            }
           }
 
           try {
+            // --- CHEAT: consume any active cheat for this user ---
+            CheatService.ActiveCheat cheat =
+                (cheatService != null) ? cheatService.consumeCheat(agentId, userId) : null;
+
             // --- STEP 1: GENERATE ORIGINAL GRID ---
             int[][] finalGrid;
-            if (wasHoldAndWin) {
+            if (cheat != null && !wasHoldAndWin) {
+              finalGrid = applyCheatGrid(cheat, config, wasFreeSpin);
+            } else if (wasHoldAndWin) {
               finalGrid =
                   rngProvider.generateHoldAndWinGrid(config, currentState.getLockedBonuses());
             } else if (isBuyHW) {
-              finalGrid = rngProvider.generateForcedBonusGrid(config, 6);
+              finalGrid = rngProvider.generateGridFromStrips(config, false);
               expandStackedWilds(finalGrid, config);
+              forceBonusSymbols(finalGrid, config, 6);
             } else if (isBuyFS) {
-              finalGrid = rngProvider.generateForcedScatterGrid(config, 3);
+              finalGrid = rngProvider.generateGridFromStrips(config, false);
               expandStackedWilds(finalGrid, config);
+              forceScatterSymbols(finalGrid, config, 3);
             } else {
               finalGrid = rngProvider.generateGridFromStrips(config, wasFreeSpin);
               expandStackedWilds(finalGrid, config);
             }
 
-            // --- STEP 2: EXPAND WILD (14 -> 10) BEFORE CREATING MATRIX ---
-            // Only expand in Base and Free Games; Hold & Win does not expand Wilds
+            // --- STEP 2: CREATE MATRIX AND APPLY OVERLAYS ---
             Matrix matrix = new Matrix(config.rows(), config.cols(), finalGrid);
 
+            // GDD 8.2: Glowing ring overlays only during base spin
+            boolean forceJackpot =
+                cheat != null
+                    && (cheat.code() == CheatCode.FORCE_JACKPOT
+                        || cheat.code() == CheatCode.FORCE_JACKPOT_TRIGGER);
+            if (isBaseSpin) {
+              rngProvider.applyJackpotOverlays(matrix, config, displayBet);
+              if (forceJackpot) {
+                rngProvider.forceJackpotOverlays(matrix, config, 6);
+              }
+            }
+
             // --- STEP 3: CALCULATE PAYOUT ---
-            PayoutResult payoutResult =
-                payoutCalculator.calculate(matrix, config, displayBet.divide(25), displayBet);
+            PayoutResult payoutResult = payoutCalculator.calculate(matrix, config, displayBet);
 
             Money jackpotWin = Money.zero();
             JackpotService.JackpotSpinResult jpResult = null;
-            if (payoutResult.isJackpotTriggered() && !wasHoldAndWin) {
-              jpResult = jackpotService.spinWheel(displayBet);
+            // GDD 8.2: Jackpot can only trigger during base spin (or cheat override)
+            if ((payoutResult.isJackpotTriggered() || forceJackpot) && isBaseSpin) {
+              jpResult = jackpotService.spinWheel(agentId, userId, sessionId, displayBet);
               jackpotWin = jpResult.getAmount();
+              jackpotHistoryPort.save(
+                  JackpotHistory.builder()
+                      .winId(jpResult.getWinId())
+                      .agentId(agentId)
+                      .userId(userId)
+                      .username(userId)
+                      .sessionId(sessionId)
+                      .jackpotType(jpResult.getTierName())
+                      .amount(jpResult.getAmount().getAmount())
+                      .createdAt(Instant.now())
+                      .build());
             }
 
             final Money[] hwWinRef = {Money.zero()};
             SlotState updatedState =
                 updateSlotState(
+                    agentId,
                     userId,
                     gameId,
                     sessionId,
@@ -180,30 +259,53 @@ public class SpinUseCaseImpl implements SpinUseCase {
                       && jpResult == null;
 
               if (isChainFinished) {
-                stateRepository.delete(userId, gameId);
+                stateRepository.delete(agentId, userId, gameId);
               } else {
                 stateRepository.save(updatedState);
               }
             }
 
-            if (finalTotalWin.isGreaterThanZero()) {
-              walletPort.credit(userId, finalTotalWin, transactionId);
+            if (!trialMode && finalTotalWin.isGreaterThanZero()) {
+              try {
+                walletPort.credit(agentId, userId, finalTotalWin, transactionId);
+                if (jpResult != null) {
+                  jackpotService.markPaid(jpResult.getWinId());
+                }
+              } catch (Exception e) {
+                if (jpResult != null) {
+                  jackpotService.markFailed(jpResult.getWinId(), e.getMessage());
+                }
+                throw e;
+              }
+            } else if (jpResult != null) {
+              jackpotService.markPaid(jpResult.getWinId());
             }
 
-            double balanceAfter = walletPort.getBalance(userId) / 100.0;
+            double balanceAfter =
+                trialMode
+                    ? SlotConstants.TRIAL_MODE_BALANCE
+                    : walletPort.getBalance(agentId, userId) / 100.0;
             saveGameHistory(
+                agentId,
                 userId,
                 gameId,
+                sessionId,
                 displayBet,
                 actualDebit,
                 matrix.getGrid(),
                 finalTotalWin,
-                idWrapper,
-                (long) (balanceAfter * 100),
+                transactionId,
+                parentTid,
                 updatedState,
-                parentTid);
+                wasFreeSpin,
+                wasHoldAndWin,
+                trialMode,
+                payoutResult,
+                jpResult,
+                isBaseSpin);
 
             return buildSlotResponse(
+                agentId,
                 config,
                 matrix,
                 payoutResult,
@@ -247,7 +349,125 @@ public class SpinUseCaseImpl implements SpinUseCase {
     }
   }
 
+  /**
+   * Apply a cheat code to override grid generation. Returns a forced grid based on the cheat type.
+   */
+  @SuppressWarnings("unchecked")
+  private int[][] applyCheatGrid(
+      CheatService.ActiveCheat cheat, SlotGameConfig config, boolean wasFreeSpin) {
+    int[][] grid;
+    switch (cheat.code()) {
+      case FORCE_FREE_SPIN -> {
+        // Expand wilds FIRST, then place scatters on clean grid.
+        grid = rngProvider.generateGridFromStrips(config, wasFreeSpin);
+        expandStackedWilds(grid, config);
+        forceScatterSymbols(grid, config, 3);
+      }
+      case FORCE_HOLD_AND_WIN, FORCE_HW_IN_FREE_SPIN -> {
+        int count =
+            cheat.value().containsKey("count")
+                ? ((Number) cheat.value().get("count")).intValue()
+                : 6;
+        // Expand wilds FIRST, then force bonus symbols — prevents stacked wild
+        // expansion from overwriting bonus symbols placed by generateForcedBonusGrid.
+        grid = rngProvider.generateGridFromStrips(config, wasFreeSpin);
+        expandStackedWilds(grid, config);
+        forceBonusSymbols(grid, config, count);
+      }
+      case FORCE_HW_LOCKED_COUNT -> {
+        int count = ((Number) cheat.value().getOrDefault("count", 6)).intValue();
+        grid = rngProvider.generateGridFromStrips(config, wasFreeSpin);
+        expandStackedWilds(grid, config);
+        forceBonusSymbols(grid, config, count);
+      }
+      case FORCE_GRID -> {
+        List<List<Integer>> rawGrid = (List<List<Integer>>) cheat.value().get("grid");
+        if (rawGrid != null && rawGrid.size() == config.rows()) {
+          grid = new int[config.rows()][config.cols()];
+          for (int r = 0; r < config.rows(); r++) {
+            for (int c = 0; c < config.cols(); c++) {
+              grid[r][c] = rawGrid.get(r).get(c);
+            }
+          }
+        } else {
+          grid = rngProvider.generateGridFromStrips(config, wasFreeSpin);
+          expandStackedWilds(grid, config);
+        }
+      }
+      case FORCE_LOSS -> {
+        // Adjacent columns share ZERO symbols → impossible to match 3+ on any payline.
+        // Verified against all 25 paylines: zero wins.
+        grid =
+            new int[][] {
+              {1, 4, 7, 2, 5},
+              {2, 5, 8, 3, 6},
+              {3, 6, 1, 4, 7}
+            };
+      }
+      case FORCE_WIN_CAP -> {
+        // All H symbols on every row — 25 paylines * 10.0 = 250x, but with high bet
+        grid = new int[config.rows()][config.cols()];
+        for (int r = 0; r < config.rows(); r++) {
+          for (int c = 0; c < config.cols(); c++) {
+            grid[r][c] = 8; // Symbol H (highest payout)
+          }
+        }
+      }
+      default -> {
+        // For FORCE_NORMAL_WIN, FORCE_JACKPOT, etc. — use normal grid
+        grid = rngProvider.generateGridFromStrips(config, wasFreeSpin);
+        expandStackedWilds(grid, config);
+      }
+    }
+    return grid;
+  }
+
+  /** Places exactly {@code count} scatters on columns 1-3 (reels 2/3/4), removing any existing. */
+  private void forceScatterSymbols(int[][] grid, SlotGameConfig config, int count) {
+    int scatterId = config.scatterSymbolId();
+    // Clear existing scatters
+    for (int r = 0; r < config.rows(); r++) {
+      for (int c = 0; c < config.cols(); c++) {
+        if (grid[r][c] == scatterId) grid[r][c] = 1;
+      }
+    }
+    // Place scatters on columns 1, 2, 3 (reels 2/3/4 per GDD 4.2)
+    int[] targetCols = {1, 2, 3};
+    java.security.SecureRandom rng = new java.security.SecureRandom();
+    for (int i = 0; i < count && i < targetCols.length; i++) {
+      int row = rng.nextInt(config.rows());
+      grid[row][targetCols[i]] = scatterId;
+    }
+  }
+
+  /** Ensures the grid has at least {@code minCount} bonus symbols (id=13). */
+  private void forceBonusSymbols(int[][] grid, SlotGameConfig config, int minCount) {
+    int cashId = config.bonusSymbolId();
+    int currentCount = 0;
+    List<int[]> nonBonusCells = new ArrayList<>();
+
+    for (int r = 0; r < config.rows(); r++) {
+      for (int c = 0; c < config.cols(); c++) {
+        int id = grid[r][c];
+        if (id == cashId || id == SlotConstants.SYMBOL_MAJOR || id == SlotConstants.SYMBOL_MINI) {
+          currentCount++;
+        } else {
+          nonBonusCells.add(new int[] {r, c});
+        }
+      }
+    }
+
+    if (currentCount < minCount) {
+      java.util.Collections.shuffle(nonBonusCells);
+      for (int i = 0; i < (minCount - currentCount) && i < nonBonusCells.size(); i++) {
+        int[] pos = nonBonusCells.get(i);
+        grid[pos[0]][pos[1]] = cashId;
+      }
+    }
+  }
+
   private SlotState updateSlotState(
+      String agentId,
       String userId,
       String gameId,
       String sessionId,
@@ -274,6 +494,7 @@ public class SpinUseCaseImpl implements SpinUseCase {
           (state != null)
               ? state
               : SlotState.builder()
+                  .agentId(agentId)
                   .userId(userId)
                   .gameId(gameId)
                   .sessionId(sessionId)
@@ -283,6 +504,10 @@ public class SpinUseCaseImpl implements SpinUseCase {
                   .accumulatedWin(0.0)
                   .build();
 
+      // Set triggerRoundId: use existing FS trigger if nested, otherwise this spin
+      if (targetState.getTriggerRoundId() == null) {
+        targetState.setTriggerRoundId(tid);
+      }
       targetState.setHoldAndWin(true);
       targetState.setRemainingRespins(3);
       targetState.setLockedBonuses(
@@ -340,6 +565,7 @@ public class SpinUseCaseImpl implements SpinUseCase {
     if (!wasFS && (payout.isTriggerFreeSpin() || isBuyFS)) {
       int fsCount = isBuyFS ? 8 : payout.getFreeSpinCount();
       return SlotState.builder()
+          .agentId(agentId)
           .userId(userId)
           .gameId(gameId)
           .sessionId(sessionId)
@@ -348,6 +574,7 @@ public class SpinUseCaseImpl implements SpinUseCase {
           .baseBet(baseBet)
           .accumulatedWin(0.0)
           .parentRoundId(parentTid)
+          .triggerRoundId(tid)
           .baseRoundNumber(round)
           .freeSpinMode(true)
           .build();
@@ -357,6 +584,7 @@ public class SpinUseCaseImpl implements SpinUseCase {
   }
 
   private SlotResultResponse buildSlotResponse(
+      String agentId,
       SlotGameConfig config,
       Matrix matrix,
       PayoutResult payout,
@@ -379,7 +607,7 @@ public class SpinUseCaseImpl implements SpinUseCase {
     boolean isEndingHWNow = wasHW && !inHW;
 
     Map<String, Object> features = new HashMap<>();
-    features.put("jackpot_pools", jackpotService.getAllPools());
+    features.put("jackpotPools", jackpotService.getAllPools(agentId));
 
     if (inFS || isFSTriggerNow) {
       int remain =
@@ -408,29 +636,29 @@ public class SpinUseCaseImpl implements SpinUseCase {
       features.put(
           SlotConstants.FEATURE_HOLD_AND_WIN,
           Map.of(
-              "respins_remain",
+              "respinsRemain",
               (state != null) ? Math.max(0, state.getRemainingRespins()) : 0,
-              "locked_bonuses",
+              "lockedBonuses",
               bonuses,
-              "total_multiplier",
+              "totalMultiplier",
               totalM,
-              "is_ending",
+              "isEnding",
               isEndingHWNow));
     }
 
     List<int[]> rings = payout.getGlowingRingPositions();
     if (!inHW && !wasHW && (!rings.isEmpty() || jpResult != null)) {
       Map<String, Object> jpData = new HashMap<>();
-      jpData.put("glowing_rings", rings);
+      jpData.put("glowingRings", rings);
       if (jpResult != null) {
         jpData.put("tier", jpResult.getTierName());
         jpData.put("win", String.format("%.2f", jpResult.getAmount().getAmount()));
-        jpData.put("hit_arrow", jpResult.isHitArrow());
-        jpData.put("is_triggered", true);
+        jpData.put("hitArrow", jpResult.isHitArrow());
+        jpData.put("isTriggered", true);
       } else {
-        jpData.put("is_triggered", false);
+        jpData.put("isTriggered", false);
       }
-      features.put("progressive_jackpot", jpData);
+      features.put(SlotConstants.FEATURE_JACKPOT, jpData);
     }
 
     String totalWinChain = String.format("%.2f", totalAccumulatedWin.getAmount());
@@ -468,16 +696,31 @@ public class SpinUseCaseImpl implements SpinUseCase {
                         .build())
                 .round(
                     SlotResultResponse.RoundContent.builder()
+                        .type(
+                            wasHW
+                                ? SlotConstants.MODE_HOLD_AND_WIN
+                                : (wasFS ? SlotConstants.MODE_FREE : SlotConstants.MODE_BASE))
                         .transactionId(idWrapper)
                         .parentId(
-                            Map.of(
-                                "sessionId",
-                                idWrapper.get("sessionId"),
-                                "round",
-                                idWrapper.get("round"),
-                                "id",
-                                parentTid))
+                            parentTid != null
+                                ? Map.of(
+                                    "sessionId",
+                                    idWrapper.get("sessionId"),
+                                    "round",
+                                    idWrapper.get("round"),
+                                    "id",
+                                    parentTid)
+                                : null)
                         .roundId(idWrapper.get("id").toString()) // RoundId from UUID
+                        .parentRoundId(parentTid)
+                        .thisMode(
+                            wasHW
+                                ? SlotConstants.MODE_HOLD_AND_WIN
+                                : (wasFS ? SlotConstants.MODE_FREE : SlotConstants.MODE_BASE))
+                        .nextMode(
+                            inHW
+                                ? SlotConstants.MODE_HOLD_AND_WIN
+                                : (inFS ? SlotConstants.MODE_FREE : SlotConstants.MODE_BASE))
                         .totalWin(totalWinChain)
                         .totalBet(String.format("%.2f", displayBet.getAmount()))
                         .endsSuperround(ends)
@@ -485,8 +728,18 @@ public class SpinUseCaseImpl implements SpinUseCase {
                         .currency("USD")
                         .result(
                             SlotResultResponse.ResultDetails.builder()
-                                .thisMode(wasHW ? "hold_and_win" : (wasFS ? "free" : "base"))
-                                .nextMode(inHW ? "hold_and_win" : (inFS ? "free" : "base"))
+                                .thisMode(
+                                    wasHW
+                                        ? SlotConstants.MODE_HOLD_AND_WIN
+                                        : (wasFS
+                                            ? SlotConstants.MODE_FREE
+                                            : SlotConstants.MODE_BASE))
+                                .nextMode(
+                                    inHW
+                                        ? SlotConstants.MODE_HOLD_AND_WIN
+                                        : (inFS
+                                            ? SlotConstants.MODE_FREE
+                                            : SlotConstants.MODE_BASE))
                                 .features(features)
                                 .superRound(
                                     SlotResultResponse.SuperRound.builder()
@@ -541,34 +794,88 @@ public class SpinUseCaseImpl implements SpinUseCase {
   }
 
   private void saveGameHistory(
+      String agentId,
       String userId,
       String gameId,
-      Money dBet,
+      String sessionId,
+      Money displayBet,
       Money actualDebit,
       int[][] grid,
       Money totalWin,
-      Map<String, Object> idW,
-      long bal,
+      String roundId,
+      String parentRoundId,
       SlotState st,
-      String pTid) {
+      boolean wasFreeSpin,
+      boolean wasHoldAndWin,
+      boolean trialMode,
+      PayoutResult payoutResult,
+      JackpotService.JackpotSpinResult jpResult,
+      boolean isBaseSpin) {
+
+    // Determine thisMode
+    String thisMode =
+        wasHoldAndWin
+            ? SlotConstants.MODE_HOLD_AND_WIN
+            : (wasFreeSpin ? SlotConstants.MODE_FREE : SlotConstants.MODE_BASE);
+
+    // Determine nextMode from updated state
+    boolean inFS = st != null && st.isFreeSpinMode();
+    boolean inHW = st != null && st.isHoldAndWinMode();
+    String nextMode =
+        inHW
+            ? SlotConstants.MODE_HOLD_AND_WIN
+            : (inFS ? SlotConstants.MODE_FREE : SlotConstants.MODE_BASE);
+
+    // Bonus state snapshot
+    Integer freeSpinsTotal =
+        (st != null && (st.isFreeSpinMode() || st.getTotalFreeSpins() > 0))
+            ? st.getTotalFreeSpins()
+            : null;
+    Integer freeSpinsRemain =
+        (st != null && (st.isFreeSpinMode() || st.getRemainingFreeSpins() > 0))
+            ? st.getRemainingFreeSpins()
+            : null;
+    Integer respinsRemain = (st != null && st.isHoldAndWinMode()) ? st.getRemainingRespins() : null;
+
+    // Jackpot contribution (4% of bet during base spin per GDD 8.3)
+    BigDecimal jackpotContribution =
+        isBaseSpin
+            ? BigDecimal.valueOf(actualDebit.getAmount() * 0.04)
+                .setScale(2, java.math.RoundingMode.HALF_UP)
+            : null;
+
     historyPort.save(
         SlotHistory.builder()
-            .roundId(idW.get("id").toString())
-            .parentRoundId(pTid)
+            .roundId(roundId)
+            .parentRoundId(parentRoundId)
+            .agentId(agentId)
             .userId(userId)
             .gameId(gameId)
-            .totalBet((long) (actualDebit.getAmount() * 100))
-            .totalWin((long) (totalWin.getAmount() * 100))
-            .balanceAfter(bal)
+            .sessionId(sessionId)
+            .betAmount(BigDecimal.valueOf(displayBet.getAmount()))
+            .totalWin(BigDecimal.valueOf(totalWin.getAmount()))
+            .trialMode(trialMode)
             .screen(grid)
-            .createdAt(Instant.now())
+            .wins(payoutResult.getWins())
+            .thisMode(thisMode)
+            .nextMode(nextMode)
+            .freeSpinsTotal(freeSpinsTotal)
+            .freeSpinsRemain(freeSpinsRemain)
+            .respinsRemain(respinsRemain)
+            .jackpotWonTier(jpResult != null ? jpResult.getTierName() : null)
+            .jackpotWonAmount(
+                jpResult != null ? BigDecimal.valueOf(jpResult.getAmount().getAmount()) : null)
+            .jackpotContribution(jackpotContribution)
+            .timestamp(Instant.now())
             .build());
   }
 
   @Override
   public SlotResultResponse executeBuyFeature(BuyFeatureCommand command) {
-    checkActiveBonus(command.getUserId(), command.getGameId());
+    validateBetAmount(command.getBetAmount());
+    checkActiveBonus(command.getAgentId(), command.getUserId(), command.getGameId());
     return handleSpin(
+        command.getAgentId(),
         command.getGameId(),
         command.getUserId(),
         command.getSessionId(),
@@ -578,13 +885,16 @@ public class SpinUseCaseImpl implements SpinUseCase {
         false,
         false,
         false,
-        null);
+        null,
+        command.isTrialMode());
   }
 
   @Override
   public SlotResultResponse executeBuyHoldAndWin(BuyFeatureCommand command) {
-    checkActiveBonus(command.getUserId(), command.getGameId());
+    validateBetAmount(command.getBetAmount());
+    checkActiveBonus(command.getAgentId(), command.getUserId(), command.getGameId());
     return handleSpin(
+        command.getAgentId(),
         command.getGameId(),
         command.getUserId(),
         command.getSessionId(),
@@ -594,18 +904,20 @@ public class SpinUseCaseImpl implements SpinUseCase {
         true,
         false,
         false,
-        null);
+        null,
+        command.isTrialMode());
   }
 
   @Override
-  public SlotResultResponse getInitialState(String userId, String gameId, String sessionId) {
+  public SlotResultResponse getInitialState(
+      String agentId, String userId, String gameId, String sessionId) {
     SlotGameConfig config =
         configPort
             .findByGameId(gameId)
             .orElseThrow(
                 () -> new DomainException("Game config not found", ErrorCode.GAME_NOT_FOUND));
-    var stateOpt = stateRepository.find(userId, gameId);
-    double balanceAfter = walletPort.getBalance(userId) / 100.0;
+    var stateOpt = stateRepository.find(agentId, userId, gameId);
+    double balanceAfter = walletPort.getBalance(agentId, userId) / 100.0;
     SlotState state = stateOpt.orElse(null);
     Money displayBet = (state != null) ? state.getBaseBet() : Money.of(1.0);
 
@@ -613,12 +925,12 @@ public class SpinUseCaseImpl implements SpinUseCase {
         (state != null && state.getLastGrid() != null)
             ? state.getLastGrid()
             : rngProvider.generateGridFromStrips(config, false);
-    // Ensure initial state also expands ID 14
     expandStackedWilds(gridToUse, config);
 
     Matrix matrix = new Matrix(config.rows(), config.cols(), gridToUse);
 
     return buildSlotResponse(
+        agentId,
         config,
         matrix,
         PayoutResult.empty(),
@@ -642,12 +954,20 @@ public class SpinUseCaseImpl implements SpinUseCase {
         null);
   }
 
-  private void checkActiveBonus(String userId, String gameId) {
+  private void validateBetAmount(Money betAmount) {
+    double amount = betAmount.getAmount();
+    for (double step : SlotConstants.ALLOWED_BET_STEPS) {
+      if (Math.abs(amount - step) < 0.001) return;
+    }
+    throw new DomainException("Invalid bet amount: " + amount, ErrorCode.INVALID_BET_AMOUNT);
+  }
+
+  private void checkActiveBonus(String agentId, String userId, String gameId) {
     stateRepository
-        .find(userId, gameId)
+        .find(agentId, userId, gameId)
         .ifPresent(
             state -> {
-              throw new DomainException("Bonus round in progress", ErrorCode.INTERNAL_SERVER_ERROR);
+              throw new DomainException("Bonus round in progress", ErrorCode.FREE_GAME_ACTIVE);
             });
   }
 }

@@ -1,28 +1,26 @@
 package asia.rgp.game.nagas.modules.slot.infrastructure.persistence.entity;
 
+import asia.rgp.game.nagas.shared.infrastructure.persistence.document.BaseDocument;
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import lombok.*;
-import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
-@Document(collection = "slot_histories")
-@Getter
-@Setter
+@Document(collection = "spin_history")
+@CompoundIndex(name = "idx_agent_user_ts", def = "{'agent_id': 1, 'user_id': 1, 'timestamp': -1}")
+@Data
+@EqualsAndHashCode(callSuper = false)
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
-public class SlotHistoryEntity {
+public class SlotHistoryEntity extends BaseDocument {
 
-  @Id private String roundId;
-
-  @Field("parent_round_id")
-  private String parentRoundId;
-
-  private int round;
-
-  @Field("sub_round")
-  private int subRound;
+  // Tenant
+  @Field("agent_id")
+  private String agentId;
 
   @Field("user_id")
   private String userId;
@@ -33,26 +31,66 @@ public class SlotHistoryEntity {
   @Field("session_id")
   private String sessionId;
 
-  @Field("total_bet")
-  private long totalBet;
+  // Round tracking
+  @Field("round_id")
+  private String roundId;
 
-  @Field("display_bet")
-  private long displayBet;
+  @Field("parent_round_id")
+  private String parentRoundId;
+
+  // Mode
+  @Field("this_mode")
+  private String thisMode;
+
+  @Field("next_mode")
+  private String nextMode;
+
+  // Financials
+  @Field("bet_amount")
+  private BigDecimal betAmount;
 
   @Field("total_win")
-  private long totalWin;
+  private BigDecimal totalWin;
 
-  @Field("balance_after")
-  private long balanceAfter;
+  @Field("trial_mode")
+  private boolean trialMode;
 
-  @Field("screen_data")
-  private int[][] screenData;
+  // Game data
+  private int[][] screen;
 
-  @Field("win_data")
-  private Object winData;
+  private List<WinLineRecord> wins;
 
-  private String type; // "BASE", "FREE", "BUY"
+  // Bonus state snapshot
+  @Field("free_spins_total")
+  private Integer freeSpinsTotal;
 
-  @Field("created_at")
-  private Instant createdAt;
+  @Field("free_spins_remain")
+  private Integer freeSpinsRemain;
+
+  @Field("respins_remain")
+  private Integer respinsRemain;
+
+  // Jackpot
+  @Field("jackpot_won_tier")
+  private String jackpotWonTier;
+
+  @Field("jackpot_won_amount")
+  private BigDecimal jackpotWonAmount;
+
+  @Field("jackpot_contribution")
+  private BigDecimal jackpotContribution;
+
+  private Instant timestamp;
+
+  @Data
+  @Builder
+  @NoArgsConstructor
+  @AllArgsConstructor
+  public static class WinLineRecord {
+    private int payline;
+    private int symbol;
+    private int occurs;
+    private BigDecimal win;
+    private String type;
+  }
 }

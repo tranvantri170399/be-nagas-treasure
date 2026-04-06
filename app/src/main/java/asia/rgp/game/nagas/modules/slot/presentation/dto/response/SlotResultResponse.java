@@ -1,9 +1,6 @@
 package asia.rgp.game.nagas.modules.slot.presentation.dto.response;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.databind.PropertyNamingStrategies;
-import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import java.util.List;
 import java.util.Map;
 import lombok.Builder;
@@ -25,7 +22,6 @@ public class SlotResultResponse {
 
   @Getter
   @Builder
-  @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
   public static class RoundContent {
     private Map<String, Object> transactionId;
     private Map<String, Object> parentId;
@@ -36,6 +32,9 @@ public class SlotResultResponse {
     private String type;
     private String createdAt;
     private String roundId;
+    private String parentRoundId;
+    private String thisMode;
+    private String nextMode;
     private String bonusSpinCampaignId;
     private List<SubGame> subgames;
     private Map<String, Object> promoInfo;
@@ -44,7 +43,6 @@ public class SlotResultResponse {
 
   @Getter
   @Builder
-  @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
   public static class ResultDetails {
     private Map<String, Object> features;
     private String totalWin;
@@ -65,7 +63,6 @@ public class SlotResultResponse {
 
   @Getter
   @Builder
-  @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
   public static class StageContent {
     private List<WinDetail> wins;
     private String totalWin;
@@ -76,7 +73,6 @@ public class SlotResultResponse {
 
   @Getter
   @Builder
-  @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
   public static class WinDetail {
     private int symbol;
     private int occurs;
@@ -90,11 +86,8 @@ public class SlotResultResponse {
 
   @Getter
   @Builder
-  @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
   public static class SuperRound {
-    @JsonProperty("buy_feature")
     private boolean buyFeature;
-
     private String totalWin;
     private int roundOffset;
     private boolean ends;
@@ -113,12 +106,11 @@ public class SlotResultResponse {
 
   @Getter
   @Builder
-  @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
   public static class SubGame {
     private String win;
     private String bet;
     private int id;
     private int weight;
-    private String type; // main_game, free_spins, hold_and_win, buy_feature
+    private String type;
   }
 }
