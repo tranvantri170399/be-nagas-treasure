@@ -231,8 +231,14 @@ public class SpinUseCaseImpl implements SpinUseCase {
                     hwWinRef);
 
             // --- STEP 4: AGGREGATE WINS ---
-            Money normalWin = wasHoldAndWin ? hwWinRef[0] : payoutResult.getTotalWin();
-            if (!wasHoldAndWin && hwWinRef[0].isGreaterThanZero()) normalWin = hwWinRef[0];
+            boolean isHWTriggerSpin =
+                !wasHoldAndWin && updatedState != null && updatedState.isHoldAndWinMode();
+            Money normalWin =
+                wasHoldAndWin
+                    ? hwWinRef[0]
+                    : (isHWTriggerSpin ? Money.zero() : payoutResult.getTotalWin());
+            if (!wasHoldAndWin && !isHWTriggerSpin && hwWinRef[0].isGreaterThanZero())
+              normalWin = hwWinRef[0];
 
             Money maxWinLimit = displayBet.times(config.maxWinMultiplier());
             Money cappedNormalWin = normalWin.isGreaterThan(maxWinLimit) ? maxWinLimit : normalWin;
@@ -605,6 +611,23 @@ public class SpinUseCaseImpl implements SpinUseCase {
     boolean inFS = state != null && (state.getRemainingFreeSpins() > 0 || state.isFreeSpinMode());
     boolean isFSTriggerNow = payout.isTriggerFreeSpin() || (isBuy && !wasHW && !wasFS && inFS);
     boolean isEndingHWNow = wasHW && !inHW;
+    boolean isHWTriggerNow = !wasHW && inHW;
+
+    // --- CONVERT GRID TO screen[cols][rows] FOR FRONTEND ---
+    int cols = matrix.cols();
+    int rows = matrix.rows();
+    int[][] feScreen = new int[cols][rows];
+
+    for (int c = 0; c < cols; c++) {
+      for (int r = 0; r < rows; r++) {
+        int symbolId = matrix.getSymbolAt(r, c);
+        if ((inHW || wasHW) && !isHWTriggerNow) {
+          feScreen[c][r] = (symbolId >= 11 && symbolId <= 13) ? symbolId : 0;
+        } else {
+          feScreen[c][r] = symbolId;
+        }
+      }
+    }
 
     Map<String, Object> features = new HashMap<>();
     features.put("jackpotPools", jackpotService.getAllPools(agentId));
@@ -633,17 +656,16 @@ public class SpinUseCaseImpl implements SpinUseCase {
                   .collect(Collectors.toList());
       double totalM = bonuses.stream().mapToDouble(SlotState.LockedBonus::getMultiplier).sum();
       if (bonuses.size() >= 15) totalM += 1000.0;
-      features.put(
-          SlotConstants.FEATURE_HOLD_AND_WIN,
-          Map.of(
-              "respinsRemain",
-              (state != null) ? Math.max(0, state.getRemainingRespins()) : 0,
-              "lockedBonuses",
-              bonuses,
-              "totalMultiplier",
-              totalM,
-              "isEnding",
-              isEndingHWNow));
+      Map<String, Object> hwFeature = new HashMap<>();
+      hwFeature.put(
+          "respinsRemain", (state != null) ? Math.max(0, state.getRemainingRespins()) : 0);
+      hwFeature.put("lockedBonuses", bonuses);
+      hwFeature.put("totalMultiplier", totalM);
+      hwFeature.put("isEnding", isEndingHWNow);
+      if (isHWTriggerNow) {
+        hwFeature.put("triggeringScreen", feScreen);
+      }
+      features.put(SlotConstants.FEATURE_HOLD_AND_WIN, hwFeature);
     }
 
     List<int[]> rings = payout.getGlowingRingPositions();
@@ -669,22 +691,6 @@ public class SpinUseCaseImpl implements SpinUseCase {
                     && state.getRemainingFreeSpins() <= 0))
             && !isFSTriggerNow
             && jpResult == null;
-
-    // --- CONVERT GRID TO screen[cols][rows] FOR FRONTEND ---
-    int cols = matrix.cols();
-    int rows = matrix.rows();
-    int[][] feScreen = new int[cols][rows];
-
-    for (int c = 0; c < cols; c++) {
-      for (int r = 0; r < rows; r++) {
-        int symbolId = matrix.getSymbolAt(r, c);
-        if (inHW || wasHW) {
-          feScreen[c][r] = (symbolId >= 11 && symbolId <= 13) ? symbolId : 0;
-        } else {
-          feScreen[c][r] = symbolId;
-        }
-      }
-    }
 
     return SlotResultResponse.builder()
         .type("result")
@@ -755,28 +761,31 @@ public class SpinUseCaseImpl implements SpinUseCase {
                                                     "%.2f",
                                                     isEndingHWNow
                                                         ? hwWinThisSpin.getAmount()
-                                                        : (wasHW
+                                                        : ((wasHW || isHWTriggerNow)
                                                             ? 0.0
                                                             : payout.getTotalWin().getAmount())))
                                             .wins(
-                                                payout.getWins().stream()
-                                                    .map(
-                                                        w ->
-                                                            SlotResultResponse.WinDetail.builder()
-                                                                .type(w.getType())
-                                                                .win(
-                                                                    String.format(
-                                                                        "%.2f",
-                                                                        w.getAmount().getAmount()))
-                                                                .payline(
-                                                                    String.valueOf(w.getLineId()))
-                                                                .symbol(w.getSymbolId())
-                                                                .occurs(w.getCount())
-                                                                .positions(
-                                                                    w
-                                                                        .getPositions()) // Positions are already [col, row] from PayoutCalculator
-                                                                .build())
-                                                    .collect(Collectors.toList()))
+                                                isHWTriggerNow
+                                                    ? Collections.emptyList()
+                                                    : payout.getWins().stream()
+                                                        .map(
+                                                            w ->
+                                                                SlotResultResponse.WinDetail
+                                                                    .builder()
+                                                                    .type(w.getType())
+                                                                    .win(
+                                                                        String.format(
+                                                                            "%.2f",
+                                                                            w.getAmount()
+                                                                                .getAmount()))
+                                                                    .payline(
+                                                                        String.valueOf(
+                                                                            w.getLineId()))
+                                                                    .symbol(w.getSymbolId())
+                                                                    .occurs(w.getCount())
+                                                                    .positions(w.getPositions())
+                                                                    .build())
+                                                        .collect(Collectors.toList()))
                                             .build()))
                                 .build())
                         .build())
