@@ -1,5 +1,6 @@
 package asia.rgp.game.nagas.infrastructure.adapter.wallet;
 
+import asia.rgp.game.nagas.infrastructure.grpc.WalletRequestContext;
 import asia.rgp.game.nagas.infrastructure.http.BaseRestClientAdapter;
 import asia.rgp.game.nagas.modules.slot.application.port.out.WalletPort;
 import asia.rgp.game.nagas.shared.domain.exception.DomainException;
@@ -13,12 +14,12 @@ import java.util.Locale;
 import java.util.UUID;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang.StringUtils;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestTemplate;
 
 @Slf4j
@@ -93,12 +94,15 @@ public class HttpWalletAdapter extends BaseRestClientAdapter implements WalletPo
 
   private TransferResultData transfer(
       String agentId, String userId, Action action, long amountInCents, String transactionId) {
+    String requestToken =
+        WalletRequestContext.get().map(WalletRequestContext.Context::getToken).orElse(null);
+
     TransferRequest request =
-        buildTransferRequest(agentId, userId, action, amountInCents, transactionId);
+        buildTransferRequest(agentId, userId, action, amountInCents, transactionId, requestToken);
 
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.APPLICATION_JSON);
-    applyAuthHeaders(headers);
+    applyAuthHeaders(headers, requestToken);
 
     String url = normalizeBaseUrl(properties.getBaseUrl()) + TRANSFER_PATH;
 
@@ -164,25 +168,32 @@ public class HttpWalletAdapter extends BaseRestClientAdapter implements WalletPo
     return item;
   }
 
-  private void applyAuthHeaders(HttpHeaders headers) {
-    if (StringUtils.isNotBlank(properties.getAuthorization())) {
+  private void applyAuthHeaders(HttpHeaders headers, String token) {
+    if (StringUtils.hasText(token)) {
+      headers.setBearerAuth(token.trim());
+    } else if (StringUtils.hasText(properties.getAuthorization())) {
       headers.set(HttpHeaders.AUTHORIZATION, properties.getAuthorization().trim());
     }
 
-    if (StringUtils.isNotBlank(properties.getApiKeyHeader())
-        && StringUtils.isNotBlank(properties.getApiKey())) {
+    if (StringUtils.hasText(properties.getApiKeyHeader())
+        && StringUtils.hasText(properties.getApiKey())) {
       headers.set(properties.getApiKeyHeader().trim(), properties.getApiKey().trim());
     }
 
     log.debug(
         "[Wallet] transfer headers prepared | hasAuthorization={} hasApiKeyHeader={}",
-        StringUtils.isNotBlank(properties.getAuthorization()),
-        StringUtils.isNotBlank(properties.getApiKeyHeader())
-            && StringUtils.isNotBlank(properties.getApiKey()));
+        StringUtils.hasText(token) || StringUtils.hasText(properties.getAuthorization()),
+        StringUtils.hasText(properties.getApiKeyHeader())
+            && StringUtils.hasText(properties.getApiKey()));
   }
 
   private TransferRequest buildTransferRequest(
-      String agentId, String userId, Action action, long amountInCents, String transactionId) {
+      String agentId,
+      String userId,
+      Action action,
+      long amountInCents,
+      String transactionId,
+      String token) {
     int agencyId = resolveAgencyId(agentId);
 
     TransferGameData data = new TransferGameData();
@@ -204,7 +215,7 @@ public class HttpWalletAdapter extends BaseRestClientAdapter implements WalletPo
     data.setIpPlay(properties.getDefaultIpPlay());
 
     TransferItem item = new TransferItem();
-    item.setToken(null);
+    item.setToken(token);
     item.setUid(userId);
     item.setAgencyId(agencyId);
     item.setMemberId(resolveMemberId(userId));
