@@ -69,7 +69,7 @@ public class SpinHandler {
     String userId = payloadString(payload, "user_id", "userId", "user_id", "userId", "");
     String gameId =
         payloadString(payload, "game_id", "gameId", "game_id", "gameId", "nagas_treasure");
-    long betAmount = payloadLong(payload, "bet_amount", "betAmount", 100L);
+    double betAmount = payloadDouble(payload, 100.0, "bet", "bet_amount", "betAmount");
     boolean trial = payloadBoolean(payload, "trial_mode", "trialMode", false);
 
     log.info(
@@ -104,8 +104,8 @@ public class SpinHandler {
     String userId = payloadString(payload, "user_id", "userId", "user_id", "userId", "");
     String gameId =
         payloadString(payload, "game_id", "gameId", "game_id", "gameId", "nagas_treasure");
-    long betAmount = payloadLong(payload, "bet_amount", "betAmount", 100L);
-    String feature = (String) payload.getOrDefault("feature", SlotConstants.FEATURE_FREE_SPINS);
+    double betAmount = payloadDouble(payload, 100.0, "bet", "bet_amount", "betAmount");
+    String feature = payload.getOrDefault("feature", SlotConstants.FEATURE_FREE_SPINS).toString();
     boolean trial = payloadBoolean(payload, "trial_mode", "trialMode", false);
 
     log.info(
@@ -171,20 +171,18 @@ public class SpinHandler {
     return result.isBlank() ? fallback : result;
   }
 
-  private long payloadLong(
-      Map<String, Object> payload, String snakeKey, String camelKey, long fallback) {
-    Object value = payload.get(snakeKey);
-    if (value == null) {
-      value = payload.get(camelKey);
-    }
-    if (value instanceof Number number) {
-      return number.longValue();
-    }
-    if (value instanceof String string) {
-      try {
-        return Long.parseLong(string);
-      } catch (NumberFormatException ignored) {
-        return fallback;
+  private double payloadDouble(Map<String, Object> payload, double fallback, String... keys) {
+    for (String key : keys) {
+      Object value = payload.get(key);
+      if (value instanceof Number number) {
+        return number.doubleValue();
+      }
+      if (value instanceof String string && !string.isBlank()) {
+        try {
+          return Double.parseDouble(string);
+        } catch (NumberFormatException ignored) {
+          // continue to next key
+        }
       }
     }
     return fallback;
