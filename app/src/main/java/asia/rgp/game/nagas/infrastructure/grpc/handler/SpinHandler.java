@@ -28,15 +28,14 @@ import org.springframework.stereotype.Component;
  *
  * <p>No business logic lives here. All spin/feature logic is in {@link SpinUseCase}.
  *
- * <p>Expected payload for SPIN (cmd = 1500):
+ * <p>Expected payload for SPIN (cmd = 1500). Production wsproxy sends {@code bet} as the primary
+ * key (string or number, may be decimal); {@code bet_amount} / {@code betAmount} accepted as legacy
+ * aliases.
  *
  * <pre>
  * {
- *   "cmd":        1500,
- *   "agent_id":   "agent-1",
- *   "user_id":    "user-42",
- *   "game_id":    "nagas_treasure",
- *   "bet_amount": 100,
+ *   "cmd": "1500" | 1500,
+ *   "bet": "1" | 1 | 1.5,
  *   "trial_mode": false
  * }
  * </pre>
@@ -45,12 +44,9 @@ import org.springframework.stereotype.Component;
  *
  * <pre>
  * {
- *   "cmd":        1501,
- *   "agent_id":   "agent-1",
- *   "user_id":    "user-42",
- *   "game_id":    "nagas_treasure",
- *   "bet_amount": 100,
- *   "feature":    "freeSpins" | "holdAndWin"
+ *   "cmd":     "1501" | 1501,
+ *   "bet":     "1" | 1 | 1.5,
+ *   "feature": "freeSpins" | "holdAndWin"
  * }
  * </pre>
  */
@@ -69,7 +65,7 @@ public class SpinHandler {
     String userId = payloadString(payload, "user_id", "userId", "user_id", "userId", "");
     String gameId =
         payloadString(payload, "game_id", "gameId", "game_id", "gameId", "nagas_treasure");
-    long betAmount = payloadLong(payload, "bet_amount", "betAmount", 100L);
+    double betAmount = payloadBetAmount(payload, 1.0);
     boolean trial = payloadBoolean(payload, "trial_mode", "trialMode", false);
 
     log.info(
@@ -104,8 +100,8 @@ public class SpinHandler {
     String userId = payloadString(payload, "user_id", "userId", "user_id", "userId", "");
     String gameId =
         payloadString(payload, "game_id", "gameId", "game_id", "gameId", "nagas_treasure");
-    long betAmount = payloadLong(payload, "bet_amount", "betAmount", 100L);
-    String feature = (String) payload.getOrDefault("feature", SlotConstants.FEATURE_FREE_SPINS);
+    double betAmount = payloadBetAmount(payload, 1.0);
+    String feature = payloadFeature(payload, SlotConstants.FEATURE_FREE_SPINS);
     boolean trial = payloadBoolean(payload, "trial_mode", "trialMode", false);
 
     log.info(
@@ -171,23 +167,34 @@ public class SpinHandler {
     return result.isBlank() ? fallback : result;
   }
 
-  private long payloadLong(
-      Map<String, Object> payload, String snakeKey, String camelKey, long fallback) {
-    Object value = payload.get(snakeKey);
-    if (value == null) {
-      value = payload.get(camelKey);
-    }
-    if (value instanceof Number number) {
-      return number.longValue();
-    }
-    if (value instanceof String string) {
-      try {
-        return Long.parseLong(string);
-      } catch (NumberFormatException ignored) {
-        return fallback;
+  /**
+   * Extract bet amount as dollars (double). Recognizes production key {@code bet} plus legacy
+   * {@code bet_amount} / {@code betAmount}. Accepts number or numeric string, including decimals.
+   */
+  private double payloadBetAmount(Map<String, Object> payload, double fallback) {
+    for (String key : new String[] {"bet", "bet_amount", "betAmount"}) {
+      Object value = payload.get(key);
+      if (value instanceof Number number) {
+        return number.doubleValue();
+      }
+      if (value instanceof String string && !string.isBlank()) {
+        try {
+          return Double.parseDouble(string);
+        } catch (NumberFormatException ignored) {
+          // fall through to next key
+        }
       }
     }
     return fallback;
+  }
+
+  private String payloadFeature(Map<String, Object> payload, String fallback) {
+    Object value = payload.get("feature");
+    if (value == null) {
+      return fallback;
+    }
+    String coerced = String.valueOf(value).trim();
+    return coerced.isEmpty() ? fallback : coerced;
   }
 
   private boolean payloadBoolean(
