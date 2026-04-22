@@ -8,9 +8,9 @@ import asia.rgp.game.nagas.shared.domain.model.Money;
  */
 public interface WalletPort {
 
-  long getBalance(String agentId, String userId);
+  long getBalance(String agencyId, String userId);
 
-  void debit(String agentId, String userId, Money amount, String transactionId);
+  void debit(String agencyId, String userId, Money amount, String transactionId);
 
-  void credit(String agentId, String userId, Money amount, String transactionId);
+  void credit(String agencyId, String userId, Money amount, String transactionId);
 }

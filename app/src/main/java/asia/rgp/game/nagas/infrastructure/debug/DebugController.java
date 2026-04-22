@@ -35,9 +35,9 @@ public class DebugController {
    *
    * <p>Example: POST /debug/cheat/agent-1/player-1 Body: {"cheat": "FORCE_FREE_SPIN", "value": {}}
    */
-  @PostMapping("/cheat/{agentId}/{userId}")
+  @PostMapping("/cheat/{agencyId}/{userId}")
   public ResponseEntity<?> applyCheat(
-      @PathVariable String agentId,
+      @PathVariable String agencyId,
       @PathVariable String userId,
       @RequestHeader(value = "X-Debug-Token", required = false) String token,
       @RequestBody Map<String, Object> body) {
@@ -64,12 +64,12 @@ public class DebugController {
     Map<String, Object> value = (Map<String, Object>) body.getOrDefault("value", Map.of());
 
     // Handle immediate mutations vs next-spin cheats
-    String description = handleCheat(agentId, userId, code, value);
+    String description = handleCheat(agencyId, userId, code, value);
 
     log.warn(
         "[DEBUG-API] cheat={} | agent={} | user={} | at={}",
         cheatName,
-        agentId,
+        agencyId,
         userId,
         Instant.now());
 
@@ -78,7 +78,7 @@ public class DebugController {
             "applied", true,
             "cheat", cheatName,
             "description", description,
-            "agentId", agentId,
+            "agencyId", agencyId,
             "userId", userId,
             "expiresIn", "5 minutes (or next spin)"));
   }
@@ -88,9 +88,9 @@ public class DebugController {
    *
    * <p>Example: POST /debug/jackpot/agent-1 Body: {"DIAMOND": 100.0, "RUBY": 50.0}
    */
-  @PostMapping("/jackpot/{agentId}")
+  @PostMapping("/jackpot/{agencyId}")
   public ResponseEntity<?> setJackpotPool(
-      @PathVariable String agentId,
+      @PathVariable String agencyId,
       @RequestHeader(value = "X-Debug-Token", required = false) String token,
       @RequestBody Map<String, Double> pools) {
 
@@ -99,8 +99,8 @@ public class DebugController {
           .body(Map.of("error", "Invalid debug token"));
     }
 
-    cheatService.setJackpotPool(agentId, pools);
-    return ResponseEntity.ok(Map.of("applied", true, "agentId", agentId, "pools", pools));
+    cheatService.setJackpotPool(agencyId, pools);
+    return ResponseEntity.ok(Map.of("applied", true, "agencyId", agencyId, "pools", pools));
   }
 
   /**
@@ -109,9 +109,9 @@ public class DebugController {
    * <p>Example: POST /debug/state/agent-1/player-1 Body: {"game_id": "nagas_treasure", "mode":
    * "free", "bet": 1.0}
    */
-  @PostMapping("/state/{agentId}/{userId}")
+  @PostMapping("/state/{agencyId}/{userId}")
   public ResponseEntity<?> setState(
-      @PathVariable String agentId,
+      @PathVariable String agencyId,
       @PathVariable String userId,
       @RequestHeader(value = "X-Debug-Token", required = false) String token,
       @RequestBody Map<String, Object> body) {
@@ -125,15 +125,15 @@ public class DebugController {
     String mode = (String) body.getOrDefault("mode", "base");
     double bet = ((Number) body.getOrDefault("bet", 1.0)).doubleValue();
 
-    cheatService.setGameMode(agentId, userId, gameId, mode, Money.of(bet));
+    cheatService.setGameMode(agencyId, userId, gameId, mode, Money.of(bet));
     return ResponseEntity.ok(
-        Map.of("applied", true, "agentId", agentId, "userId", userId, "mode", mode));
+        Map.of("applied", true, "agencyId", agencyId, "userId", userId, "mode", mode));
   }
 
   /** Reset all state for an agent+user: game state + jackpot pools. */
-  @DeleteMapping("/state/{agentId}/{userId}")
+  @DeleteMapping("/state/{agencyId}/{userId}")
   public ResponseEntity<?> resetState(
-      @PathVariable String agentId,
+      @PathVariable String agencyId,
       @PathVariable String userId,
       @RequestHeader(value = "X-Debug-Token", required = false) String token,
       @RequestParam(defaultValue = "nagas_treasure") String gameId) {
@@ -143,9 +143,9 @@ public class DebugController {
           .body(Map.of("error", "Invalid debug token"));
     }
 
-    cheatService.resetSession(agentId, userId, gameId);
+    cheatService.resetSession(agencyId, userId, gameId);
     return ResponseEntity.ok(
-        Map.of("applied", true, "reset", "session + jackpot pools", "agentId", agentId));
+        Map.of("applied", true, "reset", "session + jackpot pools", "agencyId", agencyId));
   }
 
   /** List all available cheat codes. */
@@ -187,53 +187,53 @@ public class DebugController {
 
   @SuppressWarnings("unchecked")
   private String handleCheat(
-      String agentId, String userId, CheatCode code, Map<String, Object> value) {
+      String agencyId, String userId, CheatCode code, Map<String, Object> value) {
     return switch (code) {
       // --- Immediate state mutations ---
       case SET_JACKPOT_POOL -> {
-        cheatService.setJackpotPool(agentId, toDoubleMap(value));
+        cheatService.setJackpotPool(agencyId, toDoubleMap(value));
         yield "Jackpot pools updated immediately";
       }
       case RESET_JACKPOT_POOL -> {
-        cheatService.resetJackpotPool(agentId);
+        cheatService.resetJackpotPool(agencyId);
         yield "Jackpot pools reset to seed values";
       }
       case SET_FREE_SPIN_COUNT -> {
         String gid = (String) value.getOrDefault("game_id", "nagas_treasure");
         int count = ((Number) value.getOrDefault("count", 1)).intValue();
-        cheatService.setFreeSpinCount(agentId, userId, gid, count);
+        cheatService.setFreeSpinCount(agencyId, userId, gid, count);
         yield "Free spin count set to " + count;
       }
       case SET_GAME_MODE -> {
         String gid = (String) value.getOrDefault("game_id", "nagas_treasure");
         String mode = (String) value.getOrDefault("mode", "base");
-        cheatService.setGameMode(agentId, userId, gid, mode, Money.of(1.0));
+        cheatService.setGameMode(agencyId, userId, gid, mode, Money.of(1.0));
         yield "Game mode set to " + mode;
       }
       case SET_ACCUMULATED_WIN -> {
         String gid = (String) value.getOrDefault("game_id", "nagas_treasure");
         double amt = ((Number) value.getOrDefault("amount", 0.0)).doubleValue();
-        cheatService.setAccumulatedWin(agentId, userId, gid, amt);
+        cheatService.setAccumulatedWin(agencyId, userId, gid, amt);
         yield "Accumulated win set to " + amt;
       }
       case RESET_SESSION -> {
         String gid = (String) value.getOrDefault("game_id", "nagas_treasure");
-        cheatService.resetSession(agentId, userId, gid);
+        cheatService.resetSession(agencyId, userId, gid);
         yield "Session and jackpot pools reset";
       }
       case CLEAR_AGENT_STATE -> {
         String gid = (String) value.getOrDefault("game_id", "nagas_treasure");
-        cheatService.clearAgentState(agentId, userId, gid);
+        cheatService.clearAgentState(agencyId, userId, gid);
         yield "Agent state cleared";
       }
       case FORCE_LAST_FREE_SPIN -> {
         String gid = (String) value.getOrDefault("game_id", "nagas_treasure");
-        cheatService.setFreeSpinCount(agentId, userId, gid, 1);
+        cheatService.setFreeSpinCount(agencyId, userId, gid, 1);
         yield "Remaining free spins set to 1 (last spin)";
       }
       // --- Next-spin cheats (stored in Redis, consumed on next spin) ---
       default -> {
-        cheatService.setCheat(agentId, userId, code, value);
+        cheatService.setCheat(agencyId, userId, code, value);
         yield "Will apply on next spin: " + code.name();
       }
     };

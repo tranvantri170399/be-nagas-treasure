@@ -2,12 +2,26 @@ package asia.rgp.game.nagas.infrastructure.grpc.handler;
 
 import asia.rgp.game.nagas.infrastructure.grpc.MessagePackHelper;
 import asia.rgp.game.nagas.infrastructure.grpc.PluginCommand;
+import asia.rgp.game.nagas.infrastructure.grpc.PluginSessionStore;
+import asia.rgp.game.nagas.infrastructure.grpc.PluginSessionStore.SessionAuth;
+import asia.rgp.game.nagas.infrastructure.grpc.WalletRequestContext;
 import asia.rgp.game.nagas.infrastructure.grpc.ZmqTopicHelper;
+import asia.rgp.game.nagas.infrastructure.grpc.generated.BatchPluginRequest;
+import asia.rgp.game.nagas.infrastructure.grpc.generated.BatchPluginResponse;
 import asia.rgp.game.nagas.infrastructure.grpc.generated.ConnectAndCallRequest;
+import asia.rgp.game.nagas.infrastructure.grpc.generated.DisconnectBatchRequest;
 import asia.rgp.game.nagas.infrastructure.grpc.generated.DisconnectRequest;
+import asia.rgp.game.nagas.infrastructure.grpc.generated.FetchConnectCommandsRequest;
+import asia.rgp.game.nagas.infrastructure.grpc.generated.FetchConnectCommandsResponse;
+import asia.rgp.game.nagas.infrastructure.grpc.generated.InteropRequest;
+import asia.rgp.game.nagas.infrastructure.grpc.generated.InteropResponse;
+import asia.rgp.game.nagas.infrastructure.grpc.generated.PluginInfo;
 import asia.rgp.game.nagas.infrastructure.grpc.generated.PluginRequest;
 import asia.rgp.game.nagas.infrastructure.grpc.generated.PluginResponse;
 import asia.rgp.game.nagas.infrastructure.grpc.generated.PluginServiceGrpc;
+import asia.rgp.game.nagas.infrastructure.grpc.generated.SyncSession;
+import asia.rgp.game.nagas.infrastructure.grpc.generated.SyncSessionsRequest;
+import asia.rgp.game.nagas.infrastructure.grpc.generated.SyncSessionsResponse;
 import asia.rgp.game.nagas.infrastructure.grpc.generated.ZmqMetadata;
 import asia.rgp.game.nagas.infrastructure.grpc.generated.ZmqResponse;
 import asia.rgp.game.nagas.infrastructure.zmq.ZmqPublisherPort;
@@ -69,6 +83,7 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
   private final ZmqPublisherPort zmqPublisher;
   private final WalletPort walletPort;
   private final SlotHistoryPort slotHistoryPort;
+  private final PluginSessionStore sessionStore;
 
   // ─────────────────────────────────────────────
   // gRPC Methods
@@ -79,12 +94,49 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
     String zone = request.getZone();
     String sessionId = request.getUser().getSessionId();
     String userId = request.getUser().getId();
+    if (userId == null || userId.isBlank()) {
+      log.warn(
+          "[gRPC] ConnectAndCall | PluginUser.id is empty for session={}, downstream operations may fail",
+          sessionId);
+    }
     byte[] rawData = request.getData().toByteArray();
 
     try {
       Map<String, Object> payload = MessagePackHelper.decode(rawData);
+      Map<String, Object> userParams =
+          MessagePackHelper.decode(request.getUser().getParameters().toByteArray());
+      String token = extractToken(userParams);
+      if (token == null) {
+        log.warn(
+            "[gRPC] Missing token in user.parameters. keys={} session={}",
+            userParams.keySet(),
+            sessionId);
+        throw new IllegalArgumentException("MISSING_AUTH_TOKEN");
+      }
+      String agency = extractAgency(userParams);
+      if (agency == null) {
+        agency = payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
+      }
+
+      payload.put("user_id", userId);
+      payload.put("agency_id", agency);
+
+      SessionAuth auth =
+          SessionAuth.builder()
+              .sessionId(sessionId)
+              .userId(userId)
+              .agency(agency)
+              .token(token)
+              .zone(zone)
+              .pluginName(request.getPluginName())
+              .build();
+      sessionStore.put(sessionId, auth);
+
       log.info(
-          "[gRPC] ConnectAndCall | rawDataBytes={} decodedPayload={}", rawData.length, payload);
+          "[gRPC] ConnectAndCall | rawDataBytes={} decodedPayload={} authAgency={}",
+          rawData.length,
+          payload,
+          agency);
       int cmdCode = resolveCmdCode(payload);
       log.info("[gRPC] ConnectAndCall | resolved cmdCode={} from payload", cmdCode);
 
@@ -99,7 +151,19 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
           PluginCommand.fromCode(cmdCode)
               .orElseThrow(() -> new IllegalArgumentException("Unknown cmd: " + cmdCode));
 
-      byte[] responseData = routeToHandler(command, sessionId, sessionId, zone, payload);
+      WalletRequestContext.set(
+          WalletRequestContext.Context.builder()
+              .sessionId(sessionId)
+              .userId(userId)
+              .agency(agency)
+              .token(token)
+              .build());
+      byte[] responseData;
+      try {
+        responseData = routeToHandler(command, sessionId, sessionId, zone, payload);
+      } finally {
+        WalletRequestContext.clear();
+      }
 
       String topic = ZmqTopicHelper.buildTopic(zone, sessionId);
       zmqPublisher.publish(topic, responseData);
@@ -116,6 +180,96 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
     }
   }
 
+  private String asNonBlankString(Object value) {
+    if (value == null) {
+      return null;
+    }
+    String str = String.valueOf(value).trim();
+    return str.isEmpty() ? null : str;
+  }
+
+  private String extractToken(Map<String, Object> userParams) {
+    String token = asNonBlankString(userParams.get("token"));
+    if (token != null) {
+      return token;
+    }
+
+    token = asNonBlankString(userParams.get("accessToken"));
+    if (token != null) {
+      return token;
+    }
+
+    token = asNonBlankString(userParams.get("access_token"));
+    if (token != null) {
+      return token;
+    }
+
+    Object nestedUserAgent = userParams.get("userAgent");
+    if (nestedUserAgent instanceof Map<?, ?> map) {
+      token = asNonBlankString(map.get("token"));
+      if (token != null) {
+        return token;
+      }
+      token = asNonBlankString(map.get("accessToken"));
+      if (token != null) {
+        return token;
+      }
+      token = asNonBlankString(map.get("access_token"));
+      if (token != null) {
+        return token;
+      }
+    }
+
+    return null;
+  }
+
+  private String extractAgency(Map<String, Object> userParams) {
+    String agency = asNonBlankString(userParams.get("agency"));
+    if (agency != null) {
+      return agency;
+    }
+
+    agency = asNonBlankString(userParams.get("agencyId"));
+    if (agency != null) {
+      return agency;
+    }
+
+    agency = asNonBlankString(userParams.get("agentId"));
+    if (agency != null) {
+      return agency;
+    }
+
+    agency = asNonBlankString(userParams.get("agency_id"));
+    if (agency != null) {
+      return agency;
+    }
+
+    Object nestedUserAgent = userParams.get("userAgent");
+    if (nestedUserAgent instanceof Map<?, ?> map) {
+      agency = asNonBlankString(map.get("agency_id"));
+      if (agency != null) {
+        return agency;
+      }
+      agency = asNonBlankString(map.get("agencyId"));
+      if (agency != null) {
+        return agency;
+      }
+
+      agency = asNonBlankString(map.get("agentId"));
+      if (agency != null) {
+        return agency;
+      }
+    }
+
+    return null;
+  }
+
+  private String buildInternalTopic(String command, String pluginName) {
+    String cmd = command == null || command.isBlank() ? "event" : command;
+    String plugin = pluginName == null || pluginName.isBlank() ? "nagas_treasure" : pluginName;
+    return "urn:int:c:" + cmd + ":p:" + plugin;
+  }
+
   @Override
   public void call(PluginRequest request, StreamObserver<PluginResponse> observer) {
     String zone = request.getZone();
@@ -124,6 +278,12 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
 
     try {
       Map<String, Object> payload = MessagePackHelper.decode(rawData);
+      SessionAuth auth =
+          sessionStore
+              .get(sessionId)
+              .orElseThrow(() -> new IllegalArgumentException("SESSION_NOT_FOUND"));
+      payload.put("user_id", auth.getUserId());
+      payload.put("agency_id", auth.getAgency());
       log.info("[gRPC] Call | rawDataBytes={} decodedPayload={}", rawData.length, payload);
       int cmdCode = resolveCmdCode(payload);
 
@@ -133,7 +293,19 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
           PluginCommand.fromCode(cmdCode)
               .orElseThrow(() -> new IllegalArgumentException("Unknown cmd: " + cmdCode));
 
-      byte[] responseData = routeToHandler(command, sessionId, sessionId, zone, payload);
+      WalletRequestContext.set(
+          WalletRequestContext.Context.builder()
+              .sessionId(sessionId)
+              .userId(auth.getUserId())
+              .agency(auth.getAgency())
+              .token(auth.getToken())
+              .build());
+      byte[] responseData;
+      try {
+        responseData = routeToHandler(command, sessionId, sessionId, zone, payload);
+      } finally {
+        WalletRequestContext.clear();
+      }
 
       String topic = ZmqTopicHelper.buildTopic(zone, sessionId);
       zmqPublisher.publish(topic, responseData);
@@ -154,7 +326,92 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
   @Override
   public void disconnect(DisconnectRequest request, StreamObserver<ZmqResponse> observer) {
     log.info("[gRPC] Disconnect | session={} zone={}", request.getSessionId(), request.getZone());
+    String sessionId = request.getSessionId();
+    String zone = request.getZone();
+    SessionAuth removed = sessionStore.remove(sessionId).orElse(null);
+
+    if (removed != null) {
+      try {
+        Map<String, Object> event =
+            Map.of(
+                "event",
+                "disconnect",
+                "sessionId",
+                sessionId,
+                "userId",
+                removed.getUserId(),
+                "agency",
+                removed.getAgency());
+        String internalTopic = buildInternalTopic("disconnect", removed.getPluginName());
+        zmqPublisher.publish(internalTopic, MessagePackHelper.encodeResponse(0, event));
+      } catch (Exception ex) {
+        log.warn(
+            "[gRPC] Failed to publish internal disconnect event for session={}", sessionId, ex);
+      }
+    }
+
+    observer.onNext(zmqResponseWithTopic(ZmqTopicHelper.buildTopic(zone, sessionId)));
+    observer.onCompleted();
+  }
+
+  @Override
+  public void disconnectBatch(
+      DisconnectBatchRequest request, StreamObserver<ZmqResponse> observer) {
+    for (DisconnectRequest item : request.getRequestsList()) {
+      sessionStore.remove(item.getSessionId());
+    }
     observer.onNext(ZmqResponse.newBuilder().build());
+    observer.onCompleted();
+  }
+
+  @Override
+  public void findSessionsToRemove(
+      SyncSessionsRequest request, StreamObserver<SyncSessionsResponse> observer) {
+    List<SyncSession> toRemove = new ArrayList<>();
+    for (SyncSession session : request.getSessionsList()) {
+      if (sessionStore.get(session.getSessionId()).isEmpty()) {
+        toRemove.add(session);
+      }
+    }
+    observer.onNext(SyncSessionsResponse.newBuilder().addAllSessions(toRemove).build());
+    observer.onCompleted();
+  }
+
+  @Override
+  public void syncSessions(SyncSessionsRequest request, StreamObserver<ZmqResponse> observer) {
+    observer.onNext(ZmqResponse.newBuilder().build());
+    observer.onCompleted();
+  }
+
+  @Override
+  public void fetchConnectCommands(
+      FetchConnectCommandsRequest request, StreamObserver<FetchConnectCommandsResponse> observer) {
+    List<PluginInfo> pluginInfos = new ArrayList<>();
+    for (String pluginName : request.getPluginNamesList()) {
+      pluginInfos.add(
+          PluginInfo.newBuilder()
+              .setPluginName(pluginName)
+              .addJoinCommands(PluginCommand.JOIN.getCode())
+              .build());
+    }
+    observer.onNext(FetchConnectCommandsResponse.newBuilder().addAllPlugins(pluginInfos).build());
+    observer.onCompleted();
+  }
+
+  @Override
+  public void callBatchInternally(
+      BatchPluginRequest request, StreamObserver<BatchPluginResponse> observer) {
+    List<PluginResponse> responses = new ArrayList<>();
+    for (PluginRequest pluginRequest : request.getRequestsList()) {
+      responses.add(PluginResponse.newBuilder().build());
+    }
+    observer.onNext(BatchPluginResponse.newBuilder().addAllResponses(responses).build());
+    observer.onCompleted();
+  }
+
+  @Override
+  public void interop(InteropRequest request, StreamObserver<InteropResponse> observer) {
+    observer.onNext(InteropResponse.newBuilder().setSuccess(true).build());
     observer.onCompleted();
   }
 
@@ -167,46 +424,14 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
    * as string when forwarding from WebSocket JSON frames).
    */
   private int resolveCmdCode(Map<String, Object> payload) {
-    Integer resolved = findCmdValue(payload);
-    if (resolved != null) {
-      return resolved;
+    Integer topLevel = parseCmdValue(payload.get("cmd"));
+    if (topLevel != null) {
+      return topLevel;
     }
 
     log.warn(
         "[gRPC] Missing cmd in payload. topLevelKeys={} payload={}", payload.keySet(), payload);
     return -1;
-  }
-
-  private Integer findCmdValue(Object value) {
-    if (value == null) {
-      return null;
-    }
-
-    if (value instanceof Map<?, ?> map) {
-      Integer directCmd = parseCmdValue(map.get("cmd"));
-      if (directCmd != null) {
-        return directCmd;
-      }
-
-      for (Object nestedValue : map.values()) {
-        Integer nestedCmd = findCmdValue(nestedValue);
-        if (nestedCmd != null) {
-          return nestedCmd;
-        }
-      }
-      return null;
-    }
-
-    if (value instanceof List<?> list) {
-      for (Object item : list) {
-        Integer nestedCmd = findCmdValue(item);
-        if (nestedCmd != null) {
-          return nestedCmd;
-        }
-      }
-    }
-
-    return parseCmdValue(value);
   }
 
   private Integer parseCmdValue(Object raw) {
@@ -242,48 +467,54 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
       case BUY_FEATURE -> spinHandler.handleBuyFeature(sessionId, payload);
 
       case LAST_SESSION -> {
-        String agentId = (String) payload.getOrDefault("agent_id", "");
-        String userId = (String) payload.getOrDefault("user_id", "");
-        String gameId = (String) payload.getOrDefault("game_id", "nagas_treasure");
-        yield spinHandler.handleLastSession(agentId, userId, gameId, sessionId);
+        String agencyId =
+            payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
+        String userId = payloadString(payload, "user_id", "userId", "user_id", "userId", "");
+        String gameId =
+            payloadString(payload, "game_id", "gameId", "game_id", "gameId", "nagas_treasure");
+        yield spinHandler.handleLastSession(agencyId, userId, gameId, sessionId);
       }
 
       case GET_BALANCE -> {
-        String agentId = (String) payload.getOrDefault("agent_id", "");
-        String userId = (String) payload.getOrDefault("user_id", "");
+        String agencyId =
+            payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
+        String userId = payloadString(payload, "user_id", "userId", "user_id", "userId", "");
         yield MessagePackHelper.encodeResponse(
             PluginCommand.GET_BALANCE.getCode(),
             Map.of(
-                "agent_id",
-                agentId,
+                "agency_id",
+                agencyId,
                 "user_id",
                 userId,
                 "balance",
-                balanceAsDouble(agentId, userId)));
+                balanceAsDouble(agencyId, userId)));
       }
 
       case GET_SPIN_LIST -> {
-        String agentId = (String) payload.getOrDefault("agent_id", "");
-        String userId = (String) payload.getOrDefault("user_id", "");
-        String gameId = (String) payload.getOrDefault("game_id", "");
+        String agencyId =
+            payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
+        String userId = payloadString(payload, "user_id", "userId", "user_id", "userId", "");
+        String gameId = payloadString(payload, "game_id", "gameId", "game_id", "gameId", "");
         int limit = intValue(payload.get("limit"), 20);
         int offset = intValue(payload.get("offset"), 0);
         yield MessagePackHelper.encodeResponse(
             PluginCommand.GET_SPIN_LIST.getCode(),
             Map.of(
                 "spins",
-                toHistoryRows(slotHistoryPort.findByUser(agentId, userId, gameId, limit, offset))));
+                toHistoryRows(
+                    slotHistoryPort.findByUser(agencyId, userId, gameId, limit, offset))));
       }
 
       case GET_PREV_SPIN -> {
-        String agentId = (String) payload.getOrDefault("agent_id", "");
+        String agencyId =
+            payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
         String roundId = String.valueOf(payload.getOrDefault("roundId", ""));
         if (roundId.isBlank()) {
           throw new IllegalArgumentException("MISSING_ROUND_ID");
         }
         SlotHistory history =
             slotHistoryPort
-                .findByRoundId(agentId, roundId)
+                .findByRoundId(agencyId, roundId)
                 .orElseThrow(() -> new IllegalArgumentException("ROUND_NOT_FOUND"));
         yield MessagePackHelper.encodeResponse(
             PluginCommand.GET_PREV_SPIN.getCode(), historyRow(history));
@@ -299,8 +530,8 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
         .build();
   }
 
-  private double balanceAsDouble(String agentId, String userId) {
-    return walletPort == null ? 0.0 : walletPort.getBalance(agentId, userId) / 100.0;
+  private double balanceAsDouble(String agencyId, String userId) {
+    return walletPort == null ? 0.0 : walletPort.getBalance(agencyId, userId) / 100.0;
   }
 
   private int intValue(Object value, int fallback) {
@@ -315,6 +546,30 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
       }
     }
     return fallback;
+  }
+
+  private String payloadString(
+      Map<String, Object> payload,
+      String primarySnakeKey,
+      String primaryCamelKey,
+      String secondarySnakeKey,
+      String secondaryCamelKey,
+      String fallback) {
+    Object value = payload.get(primarySnakeKey);
+    if (value == null || String.valueOf(value).isBlank()) {
+      value = payload.get(primaryCamelKey);
+    }
+    if (value == null || String.valueOf(value).isBlank()) {
+      value = payload.get(secondarySnakeKey);
+    }
+    if (value == null || String.valueOf(value).isBlank()) {
+      value = payload.get(secondaryCamelKey);
+    }
+    if (value == null) {
+      return fallback;
+    }
+    String result = String.valueOf(value);
+    return result.isBlank() ? fallback : result;
   }
 
   private List<Map<String, Object>> toHistoryRows(List<SlotHistory> histories) {

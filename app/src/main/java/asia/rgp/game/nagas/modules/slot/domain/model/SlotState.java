@@ -20,7 +20,7 @@ public class SlotState implements Serializable {
 
   private static final long serialVersionUID = 1L;
 
-  private String agentId;
+  private String agencyId;
   private String userId;
   private String gameId;
   private String sessionId;

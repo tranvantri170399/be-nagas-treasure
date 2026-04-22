@@ -27,7 +27,16 @@ public final class MessagePackHelper {
       return Collections.emptyMap();
     }
 
-    Map<String, Object> decodedByMarioCodec = decodeWithMarioExtensionCodec(data);
+    Map<String, Object> decodedByMarioCodec = decodeWithMarioBytesCodec(data);
+    if (!decodedByMarioCodec.isEmpty()) {
+      log.info(
+          "[MPack-Decode] Mario bytes decode success | size={} keys={}",
+          data.length,
+          decodedByMarioCodec.keySet());
+      return decodedByMarioCodec;
+    }
+
+    decodedByMarioCodec = decodeWithMarioExtensionCodec(data);
     if (!decodedByMarioCodec.isEmpty()) {
       log.info(
           "[MPack-Decode] Mario extension decode success | size={} keys={}",
@@ -61,6 +70,23 @@ public final class MessagePackHelper {
     }
   }
 
+  private static Map<String, Object> decodeWithMarioBytesCodec(byte[] data) {
+    try {
+      Class<?> codecClass = Class.forName("com.luigi.gaas.common.data.msgpkg.MarioBytesCodec");
+      Method unpackMethod = codecClass.getMethod("unpack", byte[].class);
+      Object unpacked = unpackMethod.invoke(null, data);
+      return toMap(unpacked);
+    } catch (ClassNotFoundException e) {
+      log.warn("[MPack-Decode] Mario bytes codec not available on classpath");
+    } catch (Exception e) {
+      log.debug(
+          "[MPack-Decode] Mario bytes decode failed | size={} error={}",
+          data.length,
+          e.getMessage());
+    }
+    return Collections.emptyMap();
+  }
+
   private static Map<String, Object> decodeWithMarioExtensionCodec(byte[] data) {
     try (MessageUnpacker unpacker = MessagePack.newDefaultUnpacker(data)) {
       if (!unpacker.hasNext()) {
@@ -76,7 +102,7 @@ public final class MessagePackHelper {
       return toMap(unpacked);
 
     } catch (ClassNotFoundException e) {
-      log.debug("[MPack-Decode] Mario extension codec not available: {}", e.getMessage());
+      log.warn("[MPack-Decode] Mario extension codec manager not available on classpath");
     } catch (Exception e) {
       log.debug(
           "[MPack-Decode] Mario extension decode failed | type={} size={} error={}",

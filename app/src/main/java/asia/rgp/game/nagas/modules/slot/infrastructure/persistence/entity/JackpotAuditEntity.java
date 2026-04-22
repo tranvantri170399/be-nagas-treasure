@@ -36,7 +36,7 @@ public class JackpotAuditEntity {
   private String winId;
 
   @Field("agent_id")
-  private String agentId;
+  private String agencyId;
 
   @Field("user_id")
   private String userId;

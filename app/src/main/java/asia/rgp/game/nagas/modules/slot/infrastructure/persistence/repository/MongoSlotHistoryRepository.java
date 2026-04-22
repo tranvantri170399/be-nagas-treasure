@@ -9,13 +9,14 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface MongoSlotHistoryRepository extends MongoRepository<SlotHistoryEntity, String> {
-  List<SlotHistoryEntity> findByAgentIdAndUserIdOrderByTimestampDesc(String agentId, String userId);
+  List<SlotHistoryEntity> findByAgencyIdAndUserIdOrderByTimestampDesc(
+      String agencyId, String userId);
 
-  List<SlotHistoryEntity> findByAgentIdAndUserIdOrderByTimestampDesc(
-      String agentId, String userId, Pageable pageable);
+  List<SlotHistoryEntity> findByAgencyIdAndUserIdOrderByTimestampDesc(
+      String agencyId, String userId, Pageable pageable);
 
-  List<SlotHistoryEntity> findByAgentIdAndUserIdAndGameIdOrderByTimestampDesc(
-      String agentId, String userId, String gameId, Pageable pageable);
+  List<SlotHistoryEntity> findByAgencyIdAndUserIdAndGameIdOrderByTimestampDesc(
+      String agencyId, String userId, String gameId, Pageable pageable);
 
-  Optional<SlotHistoryEntity> findByAgentIdAndRoundId(String agentId, String roundId);
+  Optional<SlotHistoryEntity> findByAgencyIdAndRoundId(String agencyId, String roundId);
 }

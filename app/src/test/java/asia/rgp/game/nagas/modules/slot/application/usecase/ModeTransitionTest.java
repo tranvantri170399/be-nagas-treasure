@@ -474,7 +474,7 @@ class ModeTransitionTest {
       // After H&W ended, FS mode active with 3 remaining
       SlotState fsAfterHw =
           SlotState.builder()
-              .agentId(AGENT)
+              .agencyId(AGENT)
               .userId(USER)
               .gameId(GAME)
               .sessionId(SESSION)
@@ -596,7 +596,7 @@ class ModeTransitionTest {
     void multiAgentNoCrossContamination() {
       // Agent A: H&W inside FS
       SlotState agentAState = buildHwInsideFsState(2, 6, 4);
-      agentAState.setAgentId("agent-A");
+      agentAState.setAgencyId("agent-A");
       when(stateRepository.find("agent-A", USER, GAME)).thenReturn(Optional.of(agentAState));
 
       // Agent B: fresh base spin
@@ -606,7 +606,7 @@ class ModeTransitionTest {
       SlotResultResponse respA =
           useCase.execute(
               SpinCommand.builder()
-                  .agentId("agent-A")
+                  .agencyId("agent-A")
                   .userId(USER)
                   .gameId(GAME)
                   .betAmount(Money.of(1.0))
@@ -615,7 +615,7 @@ class ModeTransitionTest {
       SlotResultResponse respB =
           useCase.execute(
               SpinCommand.builder()
-                  .agentId("agent-B")
+                  .agencyId("agent-B")
                   .userId(USER)
                   .gameId(GAME)
                   .betAmount(Money.of(1.0))
@@ -702,7 +702,7 @@ class ModeTransitionTest {
       // Last FS spin, no features triggered
       SlotState lastFs =
           SlotState.builder()
-              .agentId(AGENT)
+              .agencyId(AGENT)
               .userId(USER)
               .gameId(GAME)
               .sessionId(SESSION)
@@ -758,7 +758,7 @@ class ModeTransitionTest {
 
   private SpinCommand spinCmd(String sessionId) {
     return SpinCommand.builder()
-        .agentId(AGENT)
+        .agencyId(AGENT)
         .userId(USER)
         .gameId(GAME)
         .betAmount(Money.of(1.0))
@@ -768,7 +768,7 @@ class ModeTransitionTest {
 
   private BuyFeatureCommand buyFsCmd() {
     return BuyFeatureCommand.builder()
-        .agentId(AGENT)
+        .agencyId(AGENT)
         .userId(USER)
         .gameId(GAME)
         .sessionId(SESSION)
@@ -779,7 +779,7 @@ class ModeTransitionTest {
 
   private BuyFeatureCommand buyHwCmd() {
     return BuyFeatureCommand.builder()
-        .agentId(AGENT)
+        .agencyId(AGENT)
         .userId(USER)
         .gameId(GAME)
         .sessionId(SESSION)
@@ -790,7 +790,7 @@ class ModeTransitionTest {
 
   private SlotState buildFsState(int remaining, double accWin) {
     return SlotState.builder()
-        .agentId(AGENT)
+        .agencyId(AGENT)
         .userId(USER)
         .gameId(GAME)
         .sessionId(SESSION)
@@ -811,7 +811,7 @@ class ModeTransitionTest {
       locked.add(new SlotState.LockedBonus(i / 5, i % 5, 13, 5.0, "CASH"));
     }
     return SlotState.builder()
-        .agentId(AGENT)
+        .agencyId(AGENT)
         .userId(USER)
         .gameId(GAME)
         .sessionId(SESSION)
@@ -833,7 +833,7 @@ class ModeTransitionTest {
       locked.add(new SlotState.LockedBonus(i / 5, i % 5, 13, 5.0, "CASH"));
     }
     return SlotState.builder()
-        .agentId(AGENT)
+        .agencyId(AGENT)
         .userId(USER)
         .gameId(GAME)
         .sessionId(SESSION)

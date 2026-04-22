@@ -70,8 +70,8 @@ public class SpinUseCaseImpl implements SpinUseCase {
 
   @Override
   public SlotResultResponse execute(SpinCommand command) {
-    String agentId = command.getAgentId();
-    var stateOpt = stateRepository.find(agentId, command.getUserId(), command.getGameId());
+    String agencyId = command.getAgencyId();
+    var stateOpt = stateRepository.find(agencyId, command.getUserId(), command.getGameId());
     boolean isFS = stateOpt.isPresent() && stateOpt.get().isFreeSpinMode();
     boolean isHW = stateOpt.isPresent() && stateOpt.get().isHoldAndWinMode();
 
@@ -83,7 +83,7 @@ public class SpinUseCaseImpl implements SpinUseCase {
     Money debitAmount = (isFS || isHW) ? Money.zero() : command.getBetAmount();
 
     return handleSpin(
-        agentId,
+        agencyId,
         command.getGameId(),
         command.getUserId(),
         command.getSessionId(),
@@ -98,7 +98,7 @@ public class SpinUseCaseImpl implements SpinUseCase {
   }
 
   private SlotResultResponse handleSpin(
-      String agentId,
+      String agencyId,
       String gameId,
       String userId,
       String sessionId,
@@ -117,7 +117,7 @@ public class SpinUseCaseImpl implements SpinUseCase {
             .orElseThrow(
                 () -> new DomainException("Game config not found", ErrorCode.GAME_NOT_FOUND));
     String transactionId = UUID.randomUUID().toString();
-    String lockKey = "spin:" + agentId + ":" + sessionId;
+    String lockKey = "spin:" + agencyId + ":" + sessionId;
 
     // parentRoundId: null for BASE spin, triggerRoundId for FS/HW spins
     final String parentTid =
@@ -129,7 +129,7 @@ public class SpinUseCaseImpl implements SpinUseCase {
     final int baseRound =
         (currentState != null)
             ? currentState.getBaseRoundNumber()
-            : (int) lockService.increment("round_counter:" + agentId + ":" + sessionId);
+            : (int) lockService.increment("round_counter:" + agencyId + ":" + sessionId);
 
     Map<String, Object> idWrapper = new HashMap<>();
     idWrapper.put("sessionId", sessionId);
@@ -141,17 +141,17 @@ public class SpinUseCaseImpl implements SpinUseCase {
           boolean isBaseSpin = !wasFreeSpin && !wasHoldAndWin && !isBuyFS && !isBuyHW;
 
           if (!trialMode && actualDebit.isGreaterThanZero()) {
-            walletPort.debit(agentId, userId, actualDebit, transactionId);
+            walletPort.debit(agencyId, userId, actualDebit, transactionId);
             // GDD 8.3: Jackpot contribution only during base spin
             if (isBaseSpin) {
-              jackpotService.contribute(agentId, actualDebit);
+              jackpotService.contribute(agencyId, actualDebit);
             }
           }
 
           try {
             // --- CHEAT: consume any active cheat for this user ---
             CheatService.ActiveCheat cheat =
-                (cheatService != null) ? cheatService.consumeCheat(agentId, userId) : null;
+                (cheatService != null) ? cheatService.consumeCheat(agencyId, userId) : null;
 
             // --- STEP 1: GENERATE ORIGINAL GRID ---
             int[][] finalGrid;
@@ -195,12 +195,12 @@ public class SpinUseCaseImpl implements SpinUseCase {
             JackpotService.JackpotSpinResult jpResult = null;
             // GDD 8.2: Jackpot can only trigger during base spin (or cheat override)
             if ((payoutResult.isJackpotTriggered() || forceJackpot) && isBaseSpin) {
-              jpResult = jackpotService.spinWheel(agentId, userId, sessionId, displayBet);
+              jpResult = jackpotService.spinWheel(agencyId, userId, sessionId, displayBet);
               jackpotWin = jpResult.getAmount();
               jackpotHistoryPort.save(
                   JackpotHistory.builder()
                       .winId(jpResult.getWinId())
-                      .agentId(agentId)
+                      .agencyId(agencyId)
                       .userId(userId)
                       .username(userId)
                       .sessionId(sessionId)
@@ -213,7 +213,7 @@ public class SpinUseCaseImpl implements SpinUseCase {
             final Money[] hwWinRef = {Money.zero()};
             SlotState updatedState =
                 updateSlotState(
-                    agentId,
+                    agencyId,
                     userId,
                     gameId,
                     sessionId,
@@ -265,7 +265,7 @@ public class SpinUseCaseImpl implements SpinUseCase {
                       && jpResult == null;
 
               if (isChainFinished) {
-                stateRepository.delete(agentId, userId, gameId);
+                stateRepository.delete(agencyId, userId, gameId);
               } else {
                 stateRepository.save(updatedState);
               }
@@ -273,7 +273,7 @@ public class SpinUseCaseImpl implements SpinUseCase {
 
             if (!trialMode && finalTotalWin.isGreaterThanZero()) {
               try {
-                walletPort.credit(agentId, userId, finalTotalWin, transactionId);
+                walletPort.credit(agencyId, userId, finalTotalWin, transactionId);
                 if (jpResult != null) {
                   jackpotService.markPaid(jpResult.getWinId());
                 }
@@ -290,9 +290,9 @@ public class SpinUseCaseImpl implements SpinUseCase {
             double balanceAfter =
                 trialMode
                     ? SlotConstants.TRIAL_MODE_BALANCE
-                    : walletPort.getBalance(agentId, userId) / 100.0;
+                    : walletPort.getBalance(agencyId, userId) / 100.0;
             saveGameHistory(
-                agentId,
+                agencyId,
                 userId,
                 gameId,
                 sessionId,
@@ -311,7 +311,7 @@ public class SpinUseCaseImpl implements SpinUseCase {
                 isBaseSpin);
 
             return buildSlotResponse(
-                agentId,
+                agencyId,
                 config,
                 matrix,
                 payoutResult,
@@ -473,7 +473,7 @@ public class SpinUseCaseImpl implements SpinUseCase {
   }
 
   private SlotState updateSlotState(
-      String agentId,
+      String agencyId,
       String userId,
       String gameId,
       String sessionId,
@@ -500,7 +500,7 @@ public class SpinUseCaseImpl implements SpinUseCase {
           (state != null)
               ? state
               : SlotState.builder()
-                  .agentId(agentId)
+                  .agencyId(agencyId)
                   .userId(userId)
                   .gameId(gameId)
                   .sessionId(sessionId)
@@ -571,7 +571,7 @@ public class SpinUseCaseImpl implements SpinUseCase {
     if (!wasFS && (payout.isTriggerFreeSpin() || isBuyFS)) {
       int fsCount = isBuyFS ? 8 : payout.getFreeSpinCount();
       return SlotState.builder()
-          .agentId(agentId)
+          .agencyId(agencyId)
           .userId(userId)
           .gameId(gameId)
           .sessionId(sessionId)
@@ -590,7 +590,7 @@ public class SpinUseCaseImpl implements SpinUseCase {
   }
 
   private SlotResultResponse buildSlotResponse(
-      String agentId,
+      String agencyId,
       SlotGameConfig config,
       Matrix matrix,
       PayoutResult payout,
@@ -630,7 +630,7 @@ public class SpinUseCaseImpl implements SpinUseCase {
     }
 
     Map<String, Object> features = new HashMap<>();
-    features.put("jackpotPools", jackpotService.getAllPools(agentId));
+    features.put("jackpotPools", jackpotService.getAllPools(agencyId));
 
     if (inFS || isFSTriggerNow) {
       int remain =
@@ -803,7 +803,7 @@ public class SpinUseCaseImpl implements SpinUseCase {
   }
 
   private void saveGameHistory(
-      String agentId,
+      String agencyId,
       String userId,
       String gameId,
       String sessionId,
@@ -857,7 +857,7 @@ public class SpinUseCaseImpl implements SpinUseCase {
         SlotHistory.builder()
             .roundId(roundId)
             .parentRoundId(parentRoundId)
-            .agentId(agentId)
+            .agencyId(agencyId)
             .userId(userId)
             .gameId(gameId)
             .sessionId(sessionId)
@@ -882,9 +882,9 @@ public class SpinUseCaseImpl implements SpinUseCase {
   @Override
   public SlotResultResponse executeBuyFeature(BuyFeatureCommand command) {
     validateBetAmount(command.getBetAmount());
-    checkActiveBonus(command.getAgentId(), command.getUserId(), command.getGameId());
+    checkActiveBonus(command.getAgencyId(), command.getUserId(), command.getGameId());
     return handleSpin(
-        command.getAgentId(),
+        command.getAgencyId(),
         command.getGameId(),
         command.getUserId(),
         command.getSessionId(),
@@ -901,9 +901,9 @@ public class SpinUseCaseImpl implements SpinUseCase {
   @Override
   public SlotResultResponse executeBuyHoldAndWin(BuyFeatureCommand command) {
     validateBetAmount(command.getBetAmount());
-    checkActiveBonus(command.getAgentId(), command.getUserId(), command.getGameId());
+    checkActiveBonus(command.getAgencyId(), command.getUserId(), command.getGameId());
     return handleSpin(
-        command.getAgentId(),
+        command.getAgencyId(),
         command.getGameId(),
         command.getUserId(),
         command.getSessionId(),
@@ -919,14 +919,14 @@ public class SpinUseCaseImpl implements SpinUseCase {
 
   @Override
   public SlotResultResponse getInitialState(
-      String agentId, String userId, String gameId, String sessionId) {
+      String agencyId, String userId, String gameId, String sessionId) {
     SlotGameConfig config =
         configPort
             .findByGameId(gameId)
             .orElseThrow(
                 () -> new DomainException("Game config not found", ErrorCode.GAME_NOT_FOUND));
-    var stateOpt = stateRepository.find(agentId, userId, gameId);
-    double balanceAfter = walletPort.getBalance(agentId, userId) / 100.0;
+    var stateOpt = stateRepository.find(agencyId, userId, gameId);
+    double balanceAfter = walletPort.getBalance(agencyId, userId) / 100.0;
     SlotState state = stateOpt.orElse(null);
     Money displayBet = (state != null) ? state.getBaseBet() : Money.of(1.0);
 
@@ -939,7 +939,7 @@ public class SpinUseCaseImpl implements SpinUseCase {
     Matrix matrix = new Matrix(config.rows(), config.cols(), gridToUse);
 
     return buildSlotResponse(
-        agentId,
+        agencyId,
         config,
         matrix,
         PayoutResult.empty(),
@@ -971,9 +971,9 @@ public class SpinUseCaseImpl implements SpinUseCase {
     throw new DomainException("Invalid bet amount: " + amount, ErrorCode.INVALID_BET_AMOUNT);
   }
 
-  private void checkActiveBonus(String agentId, String userId, String gameId) {
+  private void checkActiveBonus(String agencyId, String userId, String gameId) {
     stateRepository
-        .find(agentId, userId, gameId)
+        .find(agencyId, userId, gameId)
         .ifPresent(
             state -> {
               throw new DomainException("Bonus round in progress", ErrorCode.FREE_GAME_ACTIVE);

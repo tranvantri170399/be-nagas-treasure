@@ -53,3 +53,17 @@ zmq:
 grpc:
   plugin:
     port: ${GRPC_PORT:9092}
+
+# Seamless wallet HTTP adapter
+wallet:
+  http:
+    enabled: ${WALLET_HTTP_ENABLED:false}
+    base-url: ${WALLET_BASE_URL:https://stag.osyamazakiglobel.club/wallet}
+    default-agency-id: ${WALLET_DEFAULT_AGENCY_ID:1}
+    platform-id: ${WALLET_PLATFORM_ID:1}
+    game-id: ${WALLET_GAME_ID:nagas_treasure}
+    game-name: ${WALLET_GAME_NAME:Golden Nagas Treasure}
+    default-ip-play: ${WALLET_DEFAULT_IP_PLAY:127.0.0.1}
+    authorization: ${WALLET_AUTHORIZATION:}
+    api-key-header: ${WALLET_API_KEY_HEADER:}
+    api-key: ${WALLET_API_KEY:}
