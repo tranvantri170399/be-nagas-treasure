@@ -9,7 +9,7 @@ import lombok.Getter;
 public class JackpotHistory {
   private final String id;
   private final String winId;
-  private final String agentId;
+  private final String agencyId;
   private final String userId;
   private final String username;
   private final String sessionId;

@@ -9,7 +9,7 @@ import lombok.Getter;
 @Builder
 public class BuyFeatureCommand {
 
-  private final String agentId;
+  private final String agencyId;
 
   private final String userId;
 

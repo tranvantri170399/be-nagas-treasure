@@ -11,7 +11,7 @@ import lombok.Getter;
 public class SlotHistory {
   private final String roundId;
   private final String parentRoundId;
-  private final String agentId;
+  private final String agencyId;
   private final String userId;
   private final String gameId;
   private final String sessionId;

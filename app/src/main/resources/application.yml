@@ -42,6 +42,30 @@ redis:
     key-prefix: ${REDIS_CACHE_KEY_PREFIX:game-nags:cache:local}
 
 # ZMQ publisher
+# Connects to WsProxy's SUB socket (port 5557 in local/default setup).
+# Game backend PUBs result → WsProxy receives and delivers to client via WebSocket.
 zmq:
   publisher:
-    address: ${ZMQ_PUBLISHER_ADDRESS:tcp://localhost:5555}
+    address: ${ZMQ_PUBLISHER_ADDRESS:tcp://localhost:5557}
+
+# gRPC plugin server (standalone, managed by StandaloneGrpcServerConfig)
+# WsProxy connects to this port and sends player commands (JOIN, SPIN, BUY_FEATURE, etc.)
+grpc:
+  plugin:
+    port: ${GRPC_PORT:9101}
+  server:
+    port: -1  # Disable spring-boot-starter auto gRPC server (we manage our own)
+
+# Seamless wallet HTTP adapter
+wallet:
+  http:
+    enabled: ${WALLET_HTTP_ENABLED:false}
+    base-url: ${WALLET_BASE_URL:https://stag.osyamazakiglobel.club/wallet}
+    default-agency-id: ${WALLET_DEFAULT_AGENCY_ID:1}
+    platform-id: ${WALLET_PLATFORM_ID:1}
+    game-id: ${WALLET_GAME_ID:nagas_treasure}
+    game-name: ${WALLET_GAME_NAME:Golden Nagas Treasure}
+    default-ip-play: ${WALLET_DEFAULT_IP_PLAY:127.0.0.1}
+    authorization: ${WALLET_AUTHORIZATION:}
+    api-key-header: ${WALLET_API_KEY_HEADER:}
+    api-key: ${WALLET_API_KEY:}

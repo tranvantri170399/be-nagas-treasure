@@ -23,7 +23,7 @@ public class JackpotHistoryPersistenceAdapter implements JackpotHistoryPort {
         JackpotHistoryEntity.builder()
             .id(UUID.randomUUID().toString())
             .winId(history.getWinId())
-            .agentId(history.getAgentId())
+            .agencyId(history.getAgencyId())
             .userId(history.getUserId())
             .username(history.getUsername())
             .sessionId(history.getSessionId())
@@ -35,20 +35,20 @@ public class JackpotHistoryPersistenceAdapter implements JackpotHistoryPort {
   }
 
   @Override
-  public List<JackpotHistory> findByAgentId(String agentId, int limit) {
+  public List<JackpotHistory> findByAgencyId(String agencyId, int limit) {
     // GDD 11.3: Only show GRAND and MAJOR jackpot history
     List<String> visibleTypes = List.of(SlotConstants.JACKPOT_DIAMOND, SlotConstants.JACKPOT_RUBY);
 
     return repository
-        .findByAgentIdAndJackpotTypeInOrderByCreatedAtDesc(
-            agentId, visibleTypes, PageRequest.of(0, limit))
+        .findByAgencyIdAndJackpotTypeInOrderByCreatedAtDesc(
+            agencyId, visibleTypes, PageRequest.of(0, limit))
         .stream()
         .map(
             e ->
                 JackpotHistory.builder()
                     .id(e.getId())
                     .winId(e.getWinId())
-                    .agentId(e.getAgentId())
+                    .agencyId(e.getAgencyId())
                     .userId(e.getUserId())
                     .username(e.getUsername())
                     .sessionId(e.getSessionId())

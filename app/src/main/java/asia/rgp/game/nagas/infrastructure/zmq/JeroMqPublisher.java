@@ -2,6 +2,8 @@ package asia.rgp.game.nagas.infrastructure.zmq;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -14,10 +16,20 @@ import org.zeromq.ZMQ;
  * results.
  *
  * <p>Pattern: Game Backend (PUB) → connect → WS Proxy (SUB bind)
+ *
+ * <p>Frame layout (single frame, matches be-wsproxy JeroMqFrameDecoder):
+ *
+ * <pre>
+ * [version:1][flags:1][type:1][0xD3:1][timestamp:8][topic:msgpack-str][0xC0:1][payload:n]
+ * </pre>
  */
 @Slf4j
 @Component
 public class JeroMqPublisher implements ZmqPublisherPort {
+
+  private static final byte METADATA_VERSION = 1;
+  private static final byte METADATA_FLAGS = 0;
+  private static final byte TYPE_PU_ELEMENT = 12;
 
   @Value("${zmq.publisher.address}")
   private String address;
@@ -47,12 +59,64 @@ public class JeroMqPublisher implements ZmqPublisherPort {
   @Override
   public synchronized void publish(String topic, byte[] payload) {
     try {
-      // ZMQ PUB sends: [topic] [payload] as multipart
-      pubSocket.sendMore(topic);
-      pubSocket.send(payload);
-      log.info("[zmq] PUBLISHED topic={} payloadSize={} bytes", topic, payload.length);
+      byte[] frame = buildFrame(topic, payload);
+      pubSocket.send(frame);
+      log.info(
+          "[zmq] PUBLISHED topic={} payloadSize={} bytes frameSize={} bytes",
+          topic,
+          payload.length,
+          frame.length);
     } catch (Exception e) {
       log.error("[zmq] Failed to publish topic={}: {}", topic, e.getMessage(), e);
     }
+  }
+
+  private byte[] buildFrame(String topic, byte[] payload) {
+    byte[] topicBytes = topic.getBytes(StandardCharsets.UTF_8);
+    int metadataSize =
+        3 // version + flags + type
+            + 1
+            + 8 // 0xD3 + timestamp (int64)
+            + msgpackStringSize(topicBytes) // topic
+            + 1; // 0xC0 (nil headers)
+
+    byte[] frame = new byte[metadataSize + payload.length];
+    ByteBuffer buf = ByteBuffer.wrap(frame);
+
+    buf.put(METADATA_VERSION);
+    buf.put(METADATA_FLAGS);
+    buf.put(TYPE_PU_ELEMENT);
+    buf.put((byte) 0xd3);
+    buf.putLong(System.currentTimeMillis());
+    writeMsgpackString(buf, topicBytes);
+    buf.put((byte) 0xc0);
+    buf.put(payload);
+
+    return frame;
+  }
+
+  private int msgpackStringSize(byte[] strBytes) {
+    int len = strBytes.length;
+    if (len <= 31) return 1 + len;
+    if (len <= 255) return 2 + len;
+    if (len <= 65535) return 3 + len;
+    return 5 + len;
+  }
+
+  private void writeMsgpackString(ByteBuffer buf, byte[] strBytes) {
+    int len = strBytes.length;
+    if (len <= 31) {
+      buf.put((byte) (0xa0 | len));
+    } else if (len <= 255) {
+      buf.put((byte) 0xd9);
+      buf.put((byte) len);
+    } else if (len <= 65535) {
+      buf.put((byte) 0xda);
+      buf.putShort((short) len);
+    } else {
+      buf.put((byte) 0xdb);
+      buf.putInt(len);
+    }
+    buf.put(strBytes);
   }
 }

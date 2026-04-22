@@ -12,5 +12,5 @@ public interface SpinUseCase {
   SlotResultResponse executeBuyHoldAndWin(BuyFeatureCommand command);
 
   SlotResultResponse getInitialState(
-      String agentId, String userId, String gameId, String sessionId);
+      String agencyId, String userId, String gameId, String sessionId);
 }
