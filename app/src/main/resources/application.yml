@@ -66,3 +66,6 @@ wallet:
     game-id: ${WALLET_GAME_ID:nagas_treasure}
     game-name: ${WALLET_GAME_NAME:Golden Nagas Treasure}
     default-ip-play: ${WALLET_DEFAULT_IP_PLAY:127.0.0.1}
+    authorization: ${WALLET_AUTHORIZATION:}
+    api-key-header: ${WALLET_API_KEY_HEADER:}
+    api-key: ${WALLET_API_KEY:}

@@ -13,6 +13,7 @@ import java.util.Locale;
 import java.util.UUID;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang.StringUtils;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpHeaders;
@@ -38,6 +39,7 @@ public class HttpWalletAdapter extends BaseRestClientAdapter implements WalletPo
   @Override
   public long getBalance(String agentId, String userId) {
     try {
+      log.info("[Wallet] getBalance | agentId={} userId={}", agentId, userId);
       TransferResultData result =
           transfer(agentId, userId, Action.LOSE, 0L, UUID.randomUUID().toString());
       return resolveBalance(result);
@@ -53,6 +55,13 @@ public class HttpWalletAdapter extends BaseRestClientAdapter implements WalletPo
   public void debit(String agentId, String userId, Money amount, String transactionId) {
     long amountInCents = Math.round(amount.getAmount() * 100.0);
     try {
+      log.info(
+          "[Wallet] debit | agentId={} userId={} amount={} amountInCents={} transactionId={}",
+          agentId,
+          userId,
+          amount,
+          amountInCents,
+          transactionId);
       transfer(agentId, userId, Action.BET, amountInCents, transactionId);
     } catch (DomainException e) {
       throw e;
@@ -66,6 +75,13 @@ public class HttpWalletAdapter extends BaseRestClientAdapter implements WalletPo
   public void credit(String agentId, String userId, Money amount, String transactionId) {
     long amountInCents = Math.round(amount.getAmount() * 100.0);
     try {
+      log.info(
+          "[Wallet] credit | agentId={} userId={} amount={} amountInCents={} transactionId={}",
+          agentId,
+          userId,
+          amount,
+          amountInCents,
+          transactionId);
       transfer(agentId, userId, Action.WIN, amountInCents, transactionId);
     } catch (DomainException e) {
       throw e;
@@ -82,19 +98,44 @@ public class HttpWalletAdapter extends BaseRestClientAdapter implements WalletPo
 
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.APPLICATION_JSON);
+    applyAuthHeaders(headers);
 
     String url = normalizeBaseUrl(properties.getBaseUrl()) + TRANSFER_PATH;
 
-    TransferResponse response =
-        executePostRequest(
-            url,
-            request,
-            TransferResponse.class,
-            body -> body,
-            "wallet transfer",
-            ErrorCode.BALANCE_SERVICE_ERROR,
-            ErrorCode.BALANCE_SERVICE_UNAVAILABLE,
-            headers);
+    log.info(
+        "[Wallet] transfer request | url={} action={} amountInCents={} transactionId={} headers={} payload={}",
+        url,
+        action,
+        amountInCents,
+        transactionId,
+        headers.toSingleValueMap(),
+        request);
+
+    TransferResponse response;
+    try {
+      response =
+          executePostRequest(
+              url,
+              request,
+              TransferResponse.class,
+              body -> body,
+              "wallet transfer",
+              ErrorCode.BALANCE_SERVICE_ERROR,
+              ErrorCode.BALANCE_SERVICE_UNAVAILABLE,
+              headers);
+    } catch (ExternalServiceException e) {
+      log.error(
+          "[Wallet] transfer failed | url={} action={} amountInCents={} transactionId={} headers={} payload={} error={}",
+          url,
+          action,
+          amountInCents,
+          transactionId,
+          headers.toSingleValueMap(),
+          request,
+          e.getMessage(),
+          e);
+      throw e;
+    }
 
     if (response == null) {
       throw new DomainException("Wallet response is empty", ErrorCode.BALANCE_OPERATION_FAILED);
@@ -121,6 +162,23 @@ public class HttpWalletAdapter extends BaseRestClientAdapter implements WalletPo
     }
 
     return item;
+  }
+
+  private void applyAuthHeaders(HttpHeaders headers) {
+    if (StringUtils.isNotBlank(properties.getAuthorization())) {
+      headers.set(HttpHeaders.AUTHORIZATION, properties.getAuthorization().trim());
+    }
+
+    if (StringUtils.isNotBlank(properties.getApiKeyHeader())
+        && StringUtils.isNotBlank(properties.getApiKey())) {
+      headers.set(properties.getApiKeyHeader().trim(), properties.getApiKey().trim());
+    }
+
+    log.debug(
+        "[Wallet] transfer headers prepared | hasAuthorization={} hasApiKeyHeader={}",
+        StringUtils.isNotBlank(properties.getAuthorization()),
+        StringUtils.isNotBlank(properties.getApiKeyHeader())
+            && StringUtils.isNotBlank(properties.getApiKey()));
   }
 
   private TransferRequest buildTransferRequest(

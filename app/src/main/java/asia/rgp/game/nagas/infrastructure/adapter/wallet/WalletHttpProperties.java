@@ -16,4 +16,7 @@ public class WalletHttpProperties {
   private String gameId = "nagas_treasure";
   private String gameName = "Golden Nagas Treasure";
   private String defaultIpPlay = "127.0.0.1";
+  private String authorization = "";
+  private String apiKeyHeader = "";
+  private String apiKey = "";
 }
