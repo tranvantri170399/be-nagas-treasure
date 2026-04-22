@@ -48,10 +48,8 @@ zmq:
   publisher:
     address: ${ZMQ_PUBLISHER_ADDRESS:tcp://localhost:5557}
 
-# gRPC plugin server (standalone, managed by StandaloneGrpcServerConfig)
-# WsProxy connects to this port and sends player commands (JOIN, SPIN, BUY_FEATURE, etc.)
+# gRPC plugin server (standalone, managed by StandaloneGrpcServerConfig).
+# WsProxy connects to this port and sends player commands (JOIN, SPIN, BUY_FEATURE, etc.).
 grpc:
   plugin:
-    port: ${GRPC_PORT:9101}
-  server:
-    port: -1  # Disable spring-boot-starter auto gRPC server (we manage our own)
+    port: ${GRPC_PORT:9092}

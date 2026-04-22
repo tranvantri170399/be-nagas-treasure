@@ -50,9 +50,9 @@ dependencies {
     // RabbitMQ
     implementation libs.spring.boot.starter.amqp
 
-    // gRPC
-    implementation libs.grpc.server.spring.boot.starter
-    implementation libs.grpc.client.spring.boot.starter
+    // gRPC — standalone server managed by StandaloneGrpcServerConfig.
+    // We intentionally do NOT pull net.devh's spring-boot starter: no @GrpcService /
+    // @GrpcClient is used, and its auto-config would spin up a parallel server process.
     implementation libs.grpc.stub
     implementation libs.grpc.protobuf
     implementation libs.grpc.netty
