@@ -56,14 +56,14 @@ public class SpinController {
   public ResponseEntity<SlotResultResponse> spin(@Valid @RequestBody SpinRequest request) {
     log.info(
         "[API-IN] Spin: agent={}, user={}, game={}, bet={}",
-        request.agentId(),
+        request.agencyId(),
         request.userId(),
         request.gameId(),
         request.betAmount());
 
     SpinCommand command =
         SpinCommand.builder()
-            .agentId(request.agentId())
+            .agentId(request.agencyId())
             .userId(request.userId())
             .gameId(request.gameId())
             .betAmount(Money.of(request.betAmount()))
@@ -78,13 +78,13 @@ public class SpinController {
   public ResponseEntity<SlotResultResponse> buyFreeSpins(@Valid @RequestBody SpinRequest request) {
     log.info(
         "[API-IN] Buy Free Spins: agent={}, user={}, bet={}",
-        request.agentId(),
+        request.agencyId(),
         request.userId(),
         request.betAmount());
 
     BuyFeatureCommand command =
         BuyFeatureCommand.builder()
-            .agentId(request.agentId())
+            .agentId(request.agencyId())
             .userId(request.userId())
             .gameId(request.gameId())
             .sessionId(request.sessionId())
@@ -100,13 +100,13 @@ public class SpinController {
   public ResponseEntity<SlotResultResponse> buyHoldAndWin(@Valid @RequestBody SpinRequest request) {
     log.info(
         "[API-IN] Buy Hold and Win: agent={}, user={}, bet={}",
-        request.agentId(),
+        request.agencyId(),
         request.userId(),
         request.betAmount());
 
     BuyFeatureCommand command =
         BuyFeatureCommand.builder()
-            .agentId(request.agentId())
+            .agentId(request.agencyId())
             .userId(request.userId())
             .gameId(request.gameId())
             .sessionId(request.sessionId())

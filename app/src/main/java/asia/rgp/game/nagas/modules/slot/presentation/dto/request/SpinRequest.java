@@ -1,12 +1,14 @@
 package asia.rgp.game.nagas.modules.slot.presentation.dto.request;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
 public record SpinRequest(
-    @NotBlank(message = "agent_id is required") @JsonProperty("agent_id") String agentId,
+    @NotBlank(message = "agency_id is required") @JsonProperty("agency_id") @JsonAlias("agent_id")
+        String agencyId,
     @NotNull(message = "user_id is not null") @JsonProperty("user_id") String userId,
     @NotBlank(message = "game_id is not null") @JsonProperty("game_id") String gameId,
     @NotNull(message = "bet_amount is not null")

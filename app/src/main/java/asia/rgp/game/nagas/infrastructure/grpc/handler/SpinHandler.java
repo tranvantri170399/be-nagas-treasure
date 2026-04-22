@@ -65,11 +65,12 @@ public class SpinHandler {
   /** Handle SPIN command (cmd = 1500). */
   @SuppressWarnings("unchecked")
   public byte[] handleSpin(String sessionId, Map<String, Object> payload) throws Exception {
-    String agentId = (String) payload.getOrDefault("agent_id", "");
-    String userId = (String) payload.getOrDefault("user_id", "");
-    String gameId = (String) payload.getOrDefault("game_id", "nagas_treasure");
-    long betAmount = ((Number) payload.getOrDefault("bet_amount", 100L)).longValue();
-    boolean trial = Boolean.TRUE.equals(payload.get("trial_mode"));
+    String agentId = payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
+    String userId = payloadString(payload, "user_id", "userId", "user_id", "userId", "");
+    String gameId =
+        payloadString(payload, "game_id", "gameId", "game_id", "gameId", "nagas_treasure");
+    long betAmount = payloadLong(payload, "bet_amount", "betAmount", 100L);
+    boolean trial = payloadBoolean(payload, "trial_mode", "trialMode", false);
 
     log.info(
         "[SpinHandler] SPIN | agent={} user={} bet={} trial={}", agentId, userId, betAmount, trial);
@@ -95,12 +96,13 @@ public class SpinHandler {
    */
   @SuppressWarnings("unchecked")
   public byte[] handleBuyFeature(String sessionId, Map<String, Object> payload) throws Exception {
-    String agentId = (String) payload.getOrDefault("agent_id", "");
-    String userId = (String) payload.getOrDefault("user_id", "");
-    String gameId = (String) payload.getOrDefault("game_id", "nagas_treasure");
-    long betAmount = ((Number) payload.getOrDefault("bet_amount", 100L)).longValue();
+    String agentId = payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
+    String userId = payloadString(payload, "user_id", "userId", "user_id", "userId", "");
+    String gameId =
+        payloadString(payload, "game_id", "gameId", "game_id", "gameId", "nagas_treasure");
+    long betAmount = payloadLong(payload, "bet_amount", "betAmount", 100L);
     String feature = (String) payload.getOrDefault("feature", SlotConstants.FEATURE_FREE_SPINS);
-    boolean trial = Boolean.TRUE.equals(payload.get("trial_mode"));
+    boolean trial = payloadBoolean(payload, "trial_mode", "trialMode", false);
 
     log.info(
         "[SpinHandler] BUY_FEATURE | agent={} user={} feature={} bet={}",
@@ -139,5 +141,63 @@ public class SpinHandler {
     SlotResultResponse result = spinUseCase.getInitialState(agentId, userId, gameId, sessionId);
     Map<String, Object> resultMap = objectMapper.convertValue(result, Map.class);
     return MessagePackHelper.encodeResponse(PluginCommand.LAST_SESSION.getCode(), resultMap);
+  }
+
+  private String payloadString(
+      Map<String, Object> payload,
+      String primarySnakeKey,
+      String primaryCamelKey,
+      String secondarySnakeKey,
+      String secondaryCamelKey,
+      String fallback) {
+    Object value = payload.get(primarySnakeKey);
+    if (value == null || String.valueOf(value).isBlank()) {
+      value = payload.get(primaryCamelKey);
+    }
+    if (value == null || String.valueOf(value).isBlank()) {
+      value = payload.get(secondarySnakeKey);
+    }
+    if (value == null || String.valueOf(value).isBlank()) {
+      value = payload.get(secondaryCamelKey);
+    }
+    if (value == null) {
+      return fallback;
+    }
+    String result = String.valueOf(value);
+    return result.isBlank() ? fallback : result;
+  }
+
+  private long payloadLong(
+      Map<String, Object> payload, String snakeKey, String camelKey, long fallback) {
+    Object value = payload.get(snakeKey);
+    if (value == null) {
+      value = payload.get(camelKey);
+    }
+    if (value instanceof Number number) {
+      return number.longValue();
+    }
+    if (value instanceof String string) {
+      try {
+        return Long.parseLong(string);
+      } catch (NumberFormatException ignored) {
+        return fallback;
+      }
+    }
+    return fallback;
+  }
+
+  private boolean payloadBoolean(
+      Map<String, Object> payload, String snakeKey, String camelKey, boolean fallback) {
+    Object value = payload.get(snakeKey);
+    if (value == null) {
+      value = payload.get(camelKey);
+    }
+    if (value instanceof Boolean bool) {
+      return bool;
+    }
+    if (value instanceof String string) {
+      return Boolean.parseBoolean(string);
+    }
+    return fallback;
   }
 }

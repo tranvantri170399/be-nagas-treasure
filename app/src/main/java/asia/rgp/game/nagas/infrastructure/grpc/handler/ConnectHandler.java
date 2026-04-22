@@ -54,9 +54,10 @@ public class ConnectHandler {
       String connectionId, String sessionId, String zoneId, Map<String, Object> payload)
       throws Exception {
 
-    String agentId = (String) payload.getOrDefault("agent_id", "");
-    String userId = (String) payload.getOrDefault("user_id", "");
-    String gameId = (String) payload.getOrDefault("game_id", "nagas_treasure");
+    String agentId = payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
+    String userId = payloadString(payload, "user_id", "userId", "user_id", "userId", "");
+    String gameId =
+        payloadString(payload, "game_id", "gameId", "game_id", "gameId", "nagas_treasure");
 
     log.info(
         "[ConnectHandler] JOIN | agent={} user={} game={} session={} zone={}",
@@ -70,5 +71,29 @@ public class ConnectHandler {
 
     Map<String, Object> resultMap = objectMapper.convertValue(result, Map.class);
     return MessagePackHelper.encodeResponse(PluginCommand.JOIN.getCode(), resultMap);
+  }
+
+  private String payloadString(
+      Map<String, Object> payload,
+      String primarySnakeKey,
+      String primaryCamelKey,
+      String secondarySnakeKey,
+      String secondaryCamelKey,
+      String fallback) {
+    Object value = payload.get(primarySnakeKey);
+    if (value == null || String.valueOf(value).isBlank()) {
+      value = payload.get(primaryCamelKey);
+    }
+    if (value == null || String.valueOf(value).isBlank()) {
+      value = payload.get(secondarySnakeKey);
+    }
+    if (value == null || String.valueOf(value).isBlank()) {
+      value = payload.get(secondaryCamelKey);
+    }
+    if (value == null) {
+      return fallback;
+    }
+    String result = String.valueOf(value);
+    return result.isBlank() ? fallback : result;
   }
 }
