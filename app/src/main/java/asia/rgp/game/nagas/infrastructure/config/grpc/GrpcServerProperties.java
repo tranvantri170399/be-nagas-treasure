@@ -21,5 +21,5 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class GrpcServerProperties {
 
   /** Port the gRPC server listens on. WsProxy connects to this port. */
-  private int port = 9101;
+  private int port = 9092;
 }
