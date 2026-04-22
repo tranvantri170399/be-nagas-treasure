@@ -19,11 +19,15 @@ plugins {
 repositories {
     // Use Maven Central for resolving dependencies.
     mavenCentral()
+
+    // Local libs directory for the Mario/Luigi GaaS common-data JAR
+    // (PuObject + MessagePack extension codec used by wsproxy).
+    flatDir {
+        dirs 'libs'
+    }
 }
 
 dependencies {
-    def commonDataJar = file('libs/common-data-1.0.0.jar')
-
     // Spring Boot
     implementation libs.spring.boot.starter.web
     implementation libs.spring.boot.starter.validation
@@ -62,16 +66,18 @@ dependencies {
     implementation libs.protobuf.java.util
     implementation libs.javax.annotation.api
 
-    // MessagePack
+    // MessagePack — both generations are required:
+    //   msgpack-core (0.9.x) for our encoder/decoder in MessagePackHelper
+    //   msgpack (0.6.x legacy) is the runtime dep of Mario's PuObject codec
     implementation libs.msgpack.core
-    if (commonDataJar.exists()) {
-        implementation files(commonDataJar)
-    } else {
-        logger.lifecycle("[build] Optional dependency not found, skipping: ${commonDataJar}")
-    }
-    implementation 'net.minidev:json-smart:2.4.11'
     implementation 'org.msgpack:msgpack:0.6.12'
-    implementation 'commons-io:commons-io:2.15.1'
+
+    // Mario/Luigi GaaS PuObject + extension codec. Resolved from the flatDir
+    // repo above (app/libs/common-data-1.0.0.jar). Build fails loud if absent.
+    implementation name: 'common-data-1.0.0'
+
+    // JSON Smart — runtime dep of Mario PuObject.
+    implementation 'net.minidev:json-smart:2.4.11'
 
     // ZeroMQ
     implementation libs.jeromq

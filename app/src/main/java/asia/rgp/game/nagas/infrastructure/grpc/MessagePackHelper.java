@@ -47,6 +47,20 @@ public final class MessagePackHelper {
 
     try (MessageUnpacker unpacker = MessagePack.newDefaultUnpacker(data)) {
       Value value = unpacker.unpackValue();
+      ValueType rootType = value.getValueType();
+
+      // Root-level msgpack EXTENSION means the payload is Mario's custom
+      // PuObject binary format (produced by wsproxy). Without the Mario codec
+      // classes on the classpath, any further decoding here produces garbage
+      // that looks successful (e.g. swapped keys/values, truncated ints) and
+      // propagates as "Unknown cmd" / wrong bet amount downstream. Fail loud.
+      if (rootType == ValueType.EXTENSION) {
+        throw new IOException(
+            "Cannot decode msgpack EXTENSION payload ("
+                + data.length
+                + " bytes): Mario/Luigi GaaS common-data JAR is not on the classpath. "
+                + "Place common-data-1.0.0.jar at app/libs/common-data-1.0.0.jar and rebuild.");
+      }
 
       Map<String, Object> result = valueToMap(value);
       if (result.isEmpty()) {
@@ -54,16 +68,11 @@ public final class MessagePackHelper {
       }
 
       log.info(
-          "[MPack-Decode] rootType={} size={} keys={}",
-          value.getValueType(),
-          data.length,
-          result.keySet());
+          "[MPack-Decode] rootType={} size={} keys={}", rootType, data.length, result.keySet());
 
       if (result.isEmpty()) {
         log.warn(
-            "[MPack-Decode] Empty decoded payload. rootType={} size={}",
-            value.getValueType(),
-            data.length);
+            "[MPack-Decode] Empty decoded payload. rootType={} size={}", rootType, data.length);
       }
 
       return result;
