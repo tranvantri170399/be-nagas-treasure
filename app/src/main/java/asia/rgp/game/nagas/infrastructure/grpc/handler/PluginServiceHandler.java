@@ -422,16 +422,49 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
   /**
    * Extracts cmd code from payload; handles both int and string values (be-wsproxy may encode cmd
    * as string when forwarding from WebSocket JSON frames).
+   *
+   * <p>Also supports legacy gateway format where the map is inverted, e.g. {1=cmd, bet=10}. In that
+   * case the numeric key whose value equals "cmd" is treated as the command code.
    */
   private int resolveCmdCode(Map<String, Object> payload) {
+    // Standard format: {"cmd": 1005} or {"cmd": "1005"}
     Integer topLevel = parseCmdValue(payload.get("cmd"));
     if (topLevel != null) {
-      return topLevel;
+      return normalizeLegacyCmd(topLevel);
+    }
+
+    // Legacy inverted format from gateway: {1=cmd, bet=10}
+    for (Map.Entry<String, Object> entry : payload.entrySet()) {
+      if ("cmd".equals(entry.getValue())) {
+        Integer keyAsCmd = parseCmdValue(entry.getKey());
+        if (keyAsCmd != null) {
+          log.warn("[gRPC] Resolved cmd from legacy inverted key: {}=cmd", entry.getKey());
+          return normalizeLegacyCmd(keyAsCmd);
+        }
+      }
     }
 
     log.warn(
         "[gRPC] Missing cmd in payload. topLevelKeys={} payload={}", payload.keySet(), payload);
     return -1;
+  }
+
+  /**
+   * Maps legacy gateway command codes to standard PluginCommand codes. Legacy gateway
+   * (MiniGameGatewayZone) uses: 10 = JOIN, 1 = SPIN.
+   */
+  private int normalizeLegacyCmd(int cmd) {
+    return switch (cmd) {
+      case 10 -> {
+        log.info("[gRPC] Normalized legacy cmd 10 -> {} (JOIN)", PluginCommand.JOIN.getCode());
+        yield PluginCommand.JOIN.getCode();
+      }
+      case 1 -> {
+        log.info("[gRPC] Normalized legacy cmd 1 -> {} (SPIN)", PluginCommand.SPIN.getCode());
+        yield PluginCommand.SPIN.getCode();
+      }
+      default -> cmd;
+    };
   }
 
   private Integer parseCmdValue(Object raw) {
