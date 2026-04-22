@@ -94,6 +94,11 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
     String zone = request.getZone();
     String sessionId = request.getUser().getSessionId();
     String userId = request.getUser().getId();
+    if (userId == null || userId.isBlank()) {
+      log.warn(
+          "[gRPC] ConnectAndCall | PluginUser.id is empty for session={}, downstream operations may fail",
+          sessionId);
+    }
     byte[] rawData = request.getData().toByteArray();
 
     try {
