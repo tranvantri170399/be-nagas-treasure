@@ -240,7 +240,7 @@ class SpinUseCaseGameModesTest {
 
       SpinCommand cmd =
           SpinCommand.builder()
-              .agentId(AGENT_A)
+              .agencyId(AGENT_A)
               .userId(USER_1)
               .gameId(GAME_ID)
               .betAmount(Money.of(1.0))
@@ -326,7 +326,7 @@ class SpinUseCaseGameModesTest {
       // Set up state with free spins remaining
       SlotState fsState =
           SlotState.builder()
-              .agentId(AGENT_A)
+              .agencyId(AGENT_A)
               .userId(USER_1)
               .gameId(GAME_ID)
               .sessionId(SESSION_1)
@@ -359,7 +359,7 @@ class SpinUseCaseGameModesTest {
     void freeSpinsUseBaseBet() {
       SlotState fsState =
           SlotState.builder()
-              .agentId(AGENT_A)
+              .agencyId(AGENT_A)
               .userId(USER_1)
               .gameId(GAME_ID)
               .sessionId(SESSION_1)
@@ -383,7 +383,7 @@ class SpinUseCaseGameModesTest {
     void cannotBuyDuringActiveBonus() {
       SlotState activeState =
           SlotState.builder()
-              .agentId(AGENT_A)
+              .agencyId(AGENT_A)
               .userId(USER_1)
               .gameId(GAME_ID)
               .sessionId(SESSION_1)
@@ -403,7 +403,7 @@ class SpinUseCaseGameModesTest {
     void winAccumulatesAcrossFreeSpins() {
       SlotState fsState =
           SlotState.builder()
-              .agentId(AGENT_A)
+              .agencyId(AGENT_A)
               .userId(USER_1)
               .gameId(GAME_ID)
               .sessionId(SESSION_1)
@@ -430,7 +430,7 @@ class SpinUseCaseGameModesTest {
     void lastFreeSpinTransitionsToBase() {
       SlotState lastFs =
           SlotState.builder()
-              .agentId(AGENT_A)
+              .agencyId(AGENT_A)
               .userId(USER_1)
               .gameId(GAME_ID)
               .sessionId(SESSION_1)
@@ -525,7 +525,7 @@ class SpinUseCaseGameModesTest {
 
       SlotState hwState =
           SlotState.builder()
-              .agentId(AGENT_A)
+              .agencyId(AGENT_A)
               .userId(USER_1)
               .gameId(GAME_ID)
               .sessionId(SESSION_1)
@@ -577,7 +577,7 @@ class SpinUseCaseGameModesTest {
 
       SlotState hwState =
           SlotState.builder()
-              .agentId(AGENT_A)
+              .agencyId(AGENT_A)
               .userId(USER_1)
               .gameId(GAME_ID)
               .sessionId(SESSION_1)
@@ -654,7 +654,7 @@ class SpinUseCaseGameModesTest {
 
       SpinCommand trialCmd =
           SpinCommand.builder()
-              .agentId(AGENT_A)
+              .agencyId(AGENT_A)
               .userId(USER_1)
               .gameId(GAME_ID)
               .betAmount(Money.of(1.0))
@@ -672,7 +672,7 @@ class SpinUseCaseGameModesTest {
     void noContributionDuringFreeSpin() {
       SlotState fsState =
           SlotState.builder()
-              .agentId(AGENT_A)
+              .agencyId(AGENT_A)
               .userId(USER_1)
               .gameId(GAME_ID)
               .sessionId(SESSION_1)
@@ -697,7 +697,7 @@ class SpinUseCaseGameModesTest {
     void noJackpotTriggerDuringFreeSpin() {
       SlotState fsState =
           SlotState.builder()
-              .agentId(AGENT_A)
+              .agencyId(AGENT_A)
               .userId(USER_1)
               .gameId(GAME_ID)
               .sessionId(SESSION_1)
@@ -825,7 +825,7 @@ class SpinUseCaseGameModesTest {
       // Agent A has active free spins
       SlotState agentAState =
           SlotState.builder()
-              .agentId(AGENT_A)
+              .agencyId(AGENT_A)
               .userId(USER_1)
               .gameId(GAME_ID)
               .sessionId(SESSION_1)
@@ -868,7 +868,7 @@ class SpinUseCaseGameModesTest {
 
     @Test
     @DisplayName("5.5 History saved with correct agent_id")
-    void historySavedWithCorrectAgentId() {
+    void historySavedWithCorrectAgencyId() {
       when(stateRepository.find(AGENT_A, USER_1, GAME_ID)).thenReturn(Optional.empty());
       when(stateRepository.find(AGENT_B, USER_2, GAME_ID)).thenReturn(Optional.empty());
 
@@ -879,8 +879,8 @@ class SpinUseCaseGameModesTest {
       verify(historyPort, times(2)).save(histCaptor.capture());
 
       List<SlotHistory> histories = histCaptor.getAllValues();
-      assertEquals(AGENT_A, histories.get(0).getAgentId());
-      assertEquals(AGENT_B, histories.get(1).getAgentId());
+      assertEquals(AGENT_A, histories.get(0).getAgencyId());
+      assertEquals(AGENT_B, histories.get(1).getAgencyId());
     }
 
     @Test
@@ -929,7 +929,7 @@ class SpinUseCaseGameModesTest {
     void initRestoresFreeSpin() {
       SlotState fsState =
           SlotState.builder()
-              .agentId(AGENT_A)
+              .agencyId(AGENT_A)
               .userId(USER_1)
               .gameId(GAME_ID)
               .sessionId(SESSION_1)
@@ -969,9 +969,9 @@ class SpinUseCaseGameModesTest {
   // HELPERS
   // ============================================================
 
-  private SpinCommand spinCmd(String agentId, String userId, String sessionId, double bet) {
+  private SpinCommand spinCmd(String agencyId, String userId, String sessionId, double bet) {
     return SpinCommand.builder()
-        .agentId(agentId)
+        .agencyId(agencyId)
         .userId(userId)
         .gameId(GAME_ID)
         .betAmount(Money.of(bet))
@@ -980,9 +980,9 @@ class SpinUseCaseGameModesTest {
         .build();
   }
 
-  private BuyFeatureCommand buyFsCmd(String agentId, String userId, String sessionId, double bet) {
+  private BuyFeatureCommand buyFsCmd(String agencyId, String userId, String sessionId, double bet) {
     return BuyFeatureCommand.builder()
-        .agentId(agentId)
+        .agencyId(agencyId)
         .userId(userId)
         .gameId(GAME_ID)
         .sessionId(sessionId)
@@ -992,9 +992,9 @@ class SpinUseCaseGameModesTest {
         .build();
   }
 
-  private BuyFeatureCommand buyHwCmd(String agentId, String userId, String sessionId, double bet) {
+  private BuyFeatureCommand buyHwCmd(String agencyId, String userId, String sessionId, double bet) {
     return BuyFeatureCommand.builder()
-        .agentId(agentId)
+        .agencyId(agencyId)
         .userId(userId)
         .gameId(GAME_ID)
         .sessionId(sessionId)
@@ -1004,13 +1004,13 @@ class SpinUseCaseGameModesTest {
         .build();
   }
 
-  private SlotState buildHwState(String agentId, String userId, int respins, int lockedCount) {
+  private SlotState buildHwState(String agencyId, String userId, int respins, int lockedCount) {
     List<SlotState.LockedBonus> locked = new ArrayList<>();
     for (int i = 0; i < lockedCount; i++) {
       locked.add(new SlotState.LockedBonus(i / 5, i % 5, 13, 5.0, "CASH"));
     }
     return SlotState.builder()
-        .agentId(agentId)
+        .agencyId(agencyId)
         .userId(userId)
         .gameId(GAME_ID)
         .sessionId(SESSION_1)

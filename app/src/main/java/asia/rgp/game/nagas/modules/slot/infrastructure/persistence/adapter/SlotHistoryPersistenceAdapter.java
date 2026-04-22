@@ -24,7 +24,7 @@ public class SlotHistoryPersistenceAdapter implements SlotHistoryPort {
   public void save(SlotHistory history) {
     SlotHistoryEntity entity =
         SlotHistoryEntity.builder()
-            .agentId(history.getAgentId())
+            .agencyId(history.getAgencyId())
             .userId(history.getUserId())
             .gameId(history.getGameId())
             .sessionId(history.getSessionId())
@@ -51,21 +51,21 @@ public class SlotHistoryPersistenceAdapter implements SlotHistoryPort {
 
   @Override
   public List<SlotHistory> findByUser(
-      String agentId, String userId, String gameId, int limit, int offset) {
+      String agencyId, String userId, String gameId, int limit, int offset) {
     int page = Math.max(offset, 0) / Math.max(limit, 1);
     int size = Math.max(limit, 1);
     List<SlotHistoryEntity> rows =
         (gameId == null || gameId.isBlank())
-            ? repository.findByAgentIdAndUserIdOrderByTimestampDesc(
-                agentId, userId, PageRequest.of(page, size))
-            : repository.findByAgentIdAndUserIdAndGameIdOrderByTimestampDesc(
-                agentId, userId, gameId, PageRequest.of(page, size));
+            ? repository.findByAgencyIdAndUserIdOrderByTimestampDesc(
+                agencyId, userId, PageRequest.of(page, size))
+            : repository.findByAgencyIdAndUserIdAndGameIdOrderByTimestampDesc(
+                agencyId, userId, gameId, PageRequest.of(page, size));
     return rows.stream().map(this::toDomain).collect(Collectors.toList());
   }
 
   @Override
-  public Optional<SlotHistory> findByRoundId(String agentId, String roundId) {
-    return repository.findByAgentIdAndRoundId(agentId, roundId).map(this::toDomain);
+  public Optional<SlotHistory> findByRoundId(String agencyId, String roundId) {
+    return repository.findByAgencyIdAndRoundId(agencyId, roundId).map(this::toDomain);
   }
 
   private List<SlotHistoryEntity.WinLineRecord> mapWins(List<WinDetail> wins) {
@@ -89,7 +89,7 @@ public class SlotHistoryPersistenceAdapter implements SlotHistoryPort {
     return SlotHistory.builder()
         .roundId(entity.getRoundId())
         .parentRoundId(entity.getParentRoundId())
-        .agentId(entity.getAgentId())
+        .agencyId(entity.getAgencyId())
         .userId(entity.getUserId())
         .gameId(entity.getGameId())
         .sessionId(entity.getSessionId())

@@ -36,12 +36,12 @@ public class JackpotServiceImpl implements JackpotService {
           SlotConstants.JACKPOT_EMERALD, 50.0,
           SlotConstants.JACKPOT_SAPPHIRE, 10.0);
 
-  private String poolKey(String agentId) {
-    return JACKPOT_CACHE_KEY_PREFIX + agentId;
+  private String poolKey(String agencyId) {
+    return JACKPOT_CACHE_KEY_PREFIX + agencyId;
   }
 
-  public void initPoolsIfAbsent(String agentId) {
-    String key = poolKey(agentId);
+  public void initPoolsIfAbsent(String agencyId) {
+    String key = poolKey(agencyId);
     SEED_VALUES.forEach(
         (tier, seedAmount) -> {
           Object current = hotCacheService.getHash(key, tier);
@@ -59,15 +59,15 @@ public class JackpotServiceImpl implements JackpotService {
           }
 
           if (needsInit) {
-            log.info("[JACKPOT] Init seed for agent={}, tier={}: {}", agentId, tier, seedAmount);
+            log.info("[JACKPOT] Init seed for agent={}, tier={}: {}", agencyId, tier, seedAmount);
             hotCacheService.putHash(key, tier, String.valueOf(seedAmount));
           }
         });
   }
 
   @Override
-  public void contribute(String agentId, Money amount) {
-    String key = poolKey(agentId);
+  public void contribute(String agencyId, Money amount) {
+    String key = poolKey(agencyId);
     double totalAmount = amount.getAmount();
     hotCacheService.incrementHash(key, SlotConstants.JACKPOT_DIAMOND, round4(totalAmount * 0.005));
     hotCacheService.incrementHash(key, SlotConstants.JACKPOT_RUBY, round4(totalAmount * 0.008));
@@ -84,7 +84,7 @@ public class JackpotServiceImpl implements JackpotService {
    */
   @Override
   public JackpotSpinResult spinWheel(
-      String agentId, String userId, String sessionId, Money currentBet) {
+      String agencyId, String userId, String sessionId, Money currentBet) {
     // --- Step 1: Determine tier ---
     double betFactor = currentBet.getAmount();
     double roll = random.nextDouble();
@@ -114,7 +114,7 @@ public class JackpotServiceImpl implements JackpotService {
     }
 
     // --- Step 2: Atomic claim — read current pool AND reset to seed in one Lua call ---
-    String key = poolKey(agentId);
+    String key = poolKey(agencyId);
     double seed = SEED_VALUES.getOrDefault(wonTier, 0.0);
     String claimedValueStr = hotCacheService.getAndResetHash(key, wonTier, String.valueOf(seed));
 
@@ -136,7 +136,7 @@ public class JackpotServiceImpl implements JackpotService {
         JackpotAuditEntity.builder()
             .id(UUID.randomUUID().toString())
             .winId(winId)
-            .agentId(agentId)
+            .agencyId(agencyId)
             .userId(userId)
             .sessionId(sessionId)
             .tier(wonTier)
@@ -159,7 +159,7 @@ public class JackpotServiceImpl implements JackpotService {
     log.info(
         "[JACKPOT] CLAIMED | winId={} | agent={} | user={} | tier={} | prize={} | poolBefore={} | resetTo={}",
         winId,
-        agentId,
+        agencyId,
         userId,
         wonTier,
         prize,
@@ -212,8 +212,8 @@ public class JackpotServiceImpl implements JackpotService {
   }
 
   @Override
-  public Map<String, Double> getAllPools(String agentId) {
-    String key = poolKey(agentId);
+  public Map<String, Double> getAllPools(String agencyId) {
+    String key = poolKey(agencyId);
     Map<String, Double> pools = new HashMap<>();
     SEED_VALUES.keySet().forEach(tier -> pools.put(tier, getCurrentPoolAmount(key, tier)));
     return pools;

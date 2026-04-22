@@ -229,6 +229,11 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
       return agency;
     }
 
+    agency = asNonBlankString(userParams.get("agentId"));
+    if (agency != null) {
+      return agency;
+    }
+
     agency = asNonBlankString(userParams.get("agency_id"));
     if (agency != null) {
       return agency;
@@ -241,6 +246,11 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
         return agency;
       }
       agency = asNonBlankString(map.get("agencyId"));
+      if (agency != null) {
+        return agency;
+      }
+
+      agency = asNonBlankString(map.get("agentId"));
       if (agency != null) {
         return agency;
       }
@@ -452,29 +462,32 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
       case BUY_FEATURE -> spinHandler.handleBuyFeature(sessionId, payload);
 
       case LAST_SESSION -> {
-        String agentId = payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
+        String agencyId =
+            payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
         String userId = payloadString(payload, "user_id", "userId", "user_id", "userId", "");
         String gameId =
             payloadString(payload, "game_id", "gameId", "game_id", "gameId", "nagas_treasure");
-        yield spinHandler.handleLastSession(agentId, userId, gameId, sessionId);
+        yield spinHandler.handleLastSession(agencyId, userId, gameId, sessionId);
       }
 
       case GET_BALANCE -> {
-        String agentId = payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
+        String agencyId =
+            payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
         String userId = payloadString(payload, "user_id", "userId", "user_id", "userId", "");
         yield MessagePackHelper.encodeResponse(
             PluginCommand.GET_BALANCE.getCode(),
             Map.of(
                 "agency_id",
-                agentId,
+                agencyId,
                 "user_id",
                 userId,
                 "balance",
-                balanceAsDouble(agentId, userId)));
+                balanceAsDouble(agencyId, userId)));
       }
 
       case GET_SPIN_LIST -> {
-        String agentId = payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
+        String agencyId =
+            payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
         String userId = payloadString(payload, "user_id", "userId", "user_id", "userId", "");
         String gameId = payloadString(payload, "game_id", "gameId", "game_id", "gameId", "");
         int limit = intValue(payload.get("limit"), 20);
@@ -483,18 +496,20 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
             PluginCommand.GET_SPIN_LIST.getCode(),
             Map.of(
                 "spins",
-                toHistoryRows(slotHistoryPort.findByUser(agentId, userId, gameId, limit, offset))));
+                toHistoryRows(
+                    slotHistoryPort.findByUser(agencyId, userId, gameId, limit, offset))));
       }
 
       case GET_PREV_SPIN -> {
-        String agentId = payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
+        String agencyId =
+            payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
         String roundId = String.valueOf(payload.getOrDefault("roundId", ""));
         if (roundId.isBlank()) {
           throw new IllegalArgumentException("MISSING_ROUND_ID");
         }
         SlotHistory history =
             slotHistoryPort
-                .findByRoundId(agentId, roundId)
+                .findByRoundId(agencyId, roundId)
                 .orElseThrow(() -> new IllegalArgumentException("ROUND_NOT_FOUND"));
         yield MessagePackHelper.encodeResponse(
             PluginCommand.GET_PREV_SPIN.getCode(), historyRow(history));
@@ -510,8 +525,8 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
         .build();
   }
 
-  private double balanceAsDouble(String agentId, String userId) {
-    return walletPort == null ? 0.0 : walletPort.getBalance(agentId, userId) / 100.0;
+  private double balanceAsDouble(String agencyId, String userId) {
+    return walletPort == null ? 0.0 : walletPort.getBalance(agencyId, userId) / 100.0;
   }
 
   private int intValue(Object value, int fallback) {

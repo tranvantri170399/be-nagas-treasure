@@ -65,7 +65,7 @@ public class SpinHandler {
   /** Handle SPIN command (cmd = 1500). */
   @SuppressWarnings("unchecked")
   public byte[] handleSpin(String sessionId, Map<String, Object> payload) throws Exception {
-    String agentId = payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
+    String agencyId = payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
     String userId = payloadString(payload, "user_id", "userId", "user_id", "userId", "");
     String gameId =
         payloadString(payload, "game_id", "gameId", "game_id", "gameId", "nagas_treasure");
@@ -73,11 +73,15 @@ public class SpinHandler {
     boolean trial = payloadBoolean(payload, "trial_mode", "trialMode", false);
 
     log.info(
-        "[SpinHandler] SPIN | agent={} user={} bet={} trial={}", agentId, userId, betAmount, trial);
+        "[SpinHandler] SPIN | agency={} user={} bet={} trial={}",
+        agencyId,
+        userId,
+        betAmount,
+        trial);
 
     SpinCommand command =
         SpinCommand.builder()
-            .agentId(agentId)
+            .agencyId(agencyId)
             .userId(userId)
             .gameId(gameId)
             .sessionId(sessionId)
@@ -96,7 +100,7 @@ public class SpinHandler {
    */
   @SuppressWarnings("unchecked")
   public byte[] handleBuyFeature(String sessionId, Map<String, Object> payload) throws Exception {
-    String agentId = payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
+    String agencyId = payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
     String userId = payloadString(payload, "user_id", "userId", "user_id", "userId", "");
     String gameId =
         payloadString(payload, "game_id", "gameId", "game_id", "gameId", "nagas_treasure");
@@ -105,15 +109,15 @@ public class SpinHandler {
     boolean trial = payloadBoolean(payload, "trial_mode", "trialMode", false);
 
     log.info(
-        "[SpinHandler] BUY_FEATURE | agent={} user={} feature={} bet={}",
-        agentId,
+        "[SpinHandler] BUY_FEATURE | agency={} user={} feature={} bet={}",
+        agencyId,
         userId,
         feature,
         betAmount);
 
     BuyFeatureCommand command =
         BuyFeatureCommand.builder()
-            .agentId(agentId)
+            .agencyId(agencyId)
             .userId(userId)
             .gameId(gameId)
             .sessionId(sessionId)
@@ -133,12 +137,12 @@ public class SpinHandler {
 
   /** Handle LAST_SESSION command (cmd = 1502) — returns current state or initial state. */
   @SuppressWarnings("unchecked")
-  public byte[] handleLastSession(String agentId, String userId, String gameId, String sessionId)
+  public byte[] handleLastSession(String agencyId, String userId, String gameId, String sessionId)
       throws Exception {
 
-    log.info("[SpinHandler] LAST_SESSION | agent={} user={} game={}", agentId, userId, gameId);
+    log.info("[SpinHandler] LAST_SESSION | agency={} user={} game={}", agencyId, userId, gameId);
 
-    SlotResultResponse result = spinUseCase.getInitialState(agentId, userId, gameId, sessionId);
+    SlotResultResponse result = spinUseCase.getInitialState(agencyId, userId, gameId, sessionId);
     Map<String, Object> resultMap = objectMapper.convertValue(result, Map.class);
     return MessagePackHelper.encodeResponse(PluginCommand.LAST_SESSION.getCode(), resultMap);
   }

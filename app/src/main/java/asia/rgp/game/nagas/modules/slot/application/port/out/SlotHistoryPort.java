@@ -7,7 +7,8 @@ import java.util.Optional;
 public interface SlotHistoryPort {
   void save(SlotHistory history);
 
-  List<SlotHistory> findByUser(String agentId, String userId, String gameId, int limit, int offset);
+  List<SlotHistory> findByUser(
+      String agencyId, String userId, String gameId, int limit, int offset);
 
-  Optional<SlotHistory> findByRoundId(String agentId, String roundId);
+  Optional<SlotHistory> findByRoundId(String agencyId, String roundId);
 }

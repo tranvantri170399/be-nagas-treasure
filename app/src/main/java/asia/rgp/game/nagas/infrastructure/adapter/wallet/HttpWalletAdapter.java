@@ -38,11 +38,11 @@ public class HttpWalletAdapter extends BaseRestClientAdapter implements WalletPo
   }
 
   @Override
-  public long getBalance(String agentId, String userId) {
+  public long getBalance(String agencyId, String userId) {
     try {
-      log.info("[Wallet] getBalance | agentId={} userId={}", agentId, userId);
+      log.info("[Wallet] getBalance | agencyId={} userId={}", agencyId, userId);
       TransferResultData result =
-          transfer(agentId, userId, Action.LOSE, 0L, UUID.randomUUID().toString());
+          transfer(agencyId, userId, Action.LOSE, 0L, UUID.randomUUID().toString());
       return resolveBalance(result);
     } catch (DomainException e) {
       throw e;
@@ -53,17 +53,17 @@ public class HttpWalletAdapter extends BaseRestClientAdapter implements WalletPo
   }
 
   @Override
-  public void debit(String agentId, String userId, Money amount, String transactionId) {
+  public void debit(String agencyId, String userId, Money amount, String transactionId) {
     long amountInCents = Math.round(amount.getAmount() * 100.0);
     try {
       log.info(
-          "[Wallet] debit | agentId={} userId={} amount={} amountInCents={} transactionId={}",
-          agentId,
+          "[Wallet] debit | agencyId={} userId={} amount={} amountInCents={} transactionId={}",
+          agencyId,
           userId,
           amount,
           amountInCents,
           transactionId);
-      transfer(agentId, userId, Action.BET, amountInCents, transactionId);
+      transfer(agencyId, userId, Action.BET, amountInCents, transactionId);
     } catch (DomainException e) {
       throw e;
     } catch (ExternalServiceException e) {
@@ -73,17 +73,17 @@ public class HttpWalletAdapter extends BaseRestClientAdapter implements WalletPo
   }
 
   @Override
-  public void credit(String agentId, String userId, Money amount, String transactionId) {
+  public void credit(String agencyId, String userId, Money amount, String transactionId) {
     long amountInCents = Math.round(amount.getAmount() * 100.0);
     try {
       log.info(
-          "[Wallet] credit | agentId={} userId={} amount={} amountInCents={} transactionId={}",
-          agentId,
+          "[Wallet] credit | agencyId={} userId={} amount={} amountInCents={} transactionId={}",
+          agencyId,
           userId,
           amount,
           amountInCents,
           transactionId);
-      transfer(agentId, userId, Action.WIN, amountInCents, transactionId);
+      transfer(agencyId, userId, Action.WIN, amountInCents, transactionId);
     } catch (DomainException e) {
       throw e;
     } catch (ExternalServiceException e) {
@@ -93,12 +93,12 @@ public class HttpWalletAdapter extends BaseRestClientAdapter implements WalletPo
   }
 
   private TransferResultData transfer(
-      String agentId, String userId, Action action, long amountInCents, String transactionId) {
+      String agencyId, String userId, Action action, long amountInCents, String transactionId) {
     String requestToken =
         WalletRequestContext.get().map(WalletRequestContext.Context::getToken).orElse(null);
 
     TransferRequest request =
-        buildTransferRequest(agentId, userId, action, amountInCents, transactionId, requestToken);
+        buildTransferRequest(agencyId, userId, action, amountInCents, transactionId, requestToken);
 
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.APPLICATION_JSON);
@@ -188,13 +188,13 @@ public class HttpWalletAdapter extends BaseRestClientAdapter implements WalletPo
   }
 
   private TransferRequest buildTransferRequest(
-      String agentId,
+      String agencyId,
       String userId,
       Action action,
       long amountInCents,
       String transactionId,
       String token) {
-    int agencyId = resolveAgencyId(agentId);
+    int agencyNumericId = resolveAgencyId(agencyId);
 
     TransferGameData data = new TransferGameData();
     data.setGameId(properties.getGameId());
@@ -217,7 +217,7 @@ public class HttpWalletAdapter extends BaseRestClientAdapter implements WalletPo
     TransferItem item = new TransferItem();
     item.setToken(token);
     item.setUid(userId);
-    item.setAgencyId(agencyId);
+    item.setAgencyId(agencyNumericId);
     item.setMemberId(resolveMemberId(userId));
     item.setAmount(amountInCents);
     item.setTransactionId(transactionId);
@@ -225,7 +225,7 @@ public class HttpWalletAdapter extends BaseRestClientAdapter implements WalletPo
     item.setData(data);
 
     TransferRequest request = new TransferRequest();
-    request.setAgencyId(agencyId);
+    request.setAgencyId(agencyNumericId);
     request.setTransfers(List.of(item));
     return request;
   }
@@ -251,12 +251,12 @@ public class HttpWalletAdapter extends BaseRestClientAdapter implements WalletPo
     return 0L;
   }
 
-  private int resolveAgencyId(String agentId) {
-    if (agentId == null || agentId.isBlank()) {
+  private int resolveAgencyId(String agencyId) {
+    if (agencyId == null || agencyId.isBlank()) {
       return properties.getDefaultAgencyId();
     }
 
-    String digits = agentId.replaceAll("[^0-9]", "");
+    String digits = agencyId.replaceAll("[^0-9]", "");
     if (digits.isBlank()) {
       return properties.getDefaultAgencyId();
     }

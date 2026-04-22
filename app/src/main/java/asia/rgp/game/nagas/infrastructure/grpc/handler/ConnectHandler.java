@@ -54,20 +54,20 @@ public class ConnectHandler {
       String connectionId, String sessionId, String zoneId, Map<String, Object> payload)
       throws Exception {
 
-    String agentId = payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
+    String agencyId = payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
     String userId = payloadString(payload, "user_id", "userId", "user_id", "userId", "");
     String gameId =
         payloadString(payload, "game_id", "gameId", "game_id", "gameId", "nagas_treasure");
 
     log.info(
-        "[ConnectHandler] JOIN | agent={} user={} game={} session={} zone={}",
-        agentId,
+        "[ConnectHandler] JOIN | agency={} user={} game={} session={} zone={}",
+        agencyId,
         userId,
         gameId,
         sessionId,
         zoneId);
 
-    SlotResultResponse result = spinUseCase.getInitialState(agentId, userId, gameId, sessionId);
+    SlotResultResponse result = spinUseCase.getInitialState(agencyId, userId, gameId, sessionId);
 
     Map<String, Object> resultMap = objectMapper.convertValue(result, Map.class);
     return MessagePackHelper.encodeResponse(PluginCommand.JOIN.getCode(), resultMap);

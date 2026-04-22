@@ -31,25 +31,25 @@ public class SpinController {
 
   @GetMapping("/init")
   public ResponseEntity<SlotResultResponse> initGame(
-      @RequestParam String agentId,
+      @RequestParam String agencyId,
       @RequestParam String userId,
       @RequestParam String gameId,
       @RequestParam String sessionId) {
 
     log.info(
         "[API-IN] Init Game: agent={}, user={}, game={}, sid={}",
-        agentId,
+        agencyId,
         userId,
         gameId,
         sessionId);
 
-    SlotResultResponse response = spinUseCase.getInitialState(agentId, userId, gameId, sessionId);
+    SlotResultResponse response = spinUseCase.getInitialState(agencyId, userId, gameId, sessionId);
     return ResponseEntity.ok(response);
   }
 
   @GetMapping("/jackpot-pools")
-  public ResponseEntity<?> getJackpotPools(@RequestParam String agentId) {
-    return ResponseEntity.ok(Map.of("data", jackpotService.getAllPools(agentId)));
+  public ResponseEntity<?> getJackpotPools(@RequestParam String agencyId) {
+    return ResponseEntity.ok(Map.of("data", jackpotService.getAllPools(agencyId)));
   }
 
   @PostMapping("/spin")
@@ -63,7 +63,7 @@ public class SpinController {
 
     SpinCommand command =
         SpinCommand.builder()
-            .agentId(request.agencyId())
+            .agencyId(request.agencyId())
             .userId(request.userId())
             .gameId(request.gameId())
             .betAmount(Money.of(request.betAmount()))
@@ -84,7 +84,7 @@ public class SpinController {
 
     BuyFeatureCommand command =
         BuyFeatureCommand.builder()
-            .agentId(request.agencyId())
+            .agencyId(request.agencyId())
             .userId(request.userId())
             .gameId(request.gameId())
             .sessionId(request.sessionId())
@@ -106,7 +106,7 @@ public class SpinController {
 
     BuyFeatureCommand command =
         BuyFeatureCommand.builder()
-            .agentId(request.agencyId())
+            .agencyId(request.agencyId())
             .userId(request.userId())
             .gameId(request.gameId())
             .sessionId(request.sessionId())
@@ -120,8 +120,8 @@ public class SpinController {
 
   @GetMapping("/jackpot-history")
   public ResponseEntity<?> getJackpotHistory(
-      @RequestParam String agentId, @RequestParam(defaultValue = "50") int limit) {
-    List<JackpotHistory> history = jackpotHistoryPort.findByAgentId(agentId, limit);
+      @RequestParam String agencyId, @RequestParam(defaultValue = "50") int limit) {
+    List<JackpotHistory> history = jackpotHistoryPort.findByAgencyId(agencyId, limit);
     return ResponseEntity.ok(Map.of("data", history));
   }
 }
