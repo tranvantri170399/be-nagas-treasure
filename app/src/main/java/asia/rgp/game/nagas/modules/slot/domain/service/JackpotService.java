@@ -6,11 +6,11 @@ import lombok.Builder;
 import lombok.Getter;
 
 public interface JackpotService {
-  void contribute(String agentId, Money amount);
+  void contribute(String agencyId, Money amount);
 
-  Map<String, Double> getAllPools(String agentId);
+  Map<String, Double> getAllPools(String agencyId);
 
-  JackpotSpinResult spinWheel(String agentId, String userId, String sessionId, Money currentBet);
+  JackpotSpinResult spinWheel(String agencyId, String userId, String sessionId, Money currentBet);
 
   void markPaid(String winId);
 

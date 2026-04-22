@@ -6,5 +6,5 @@ import java.util.List;
 public interface JackpotHistoryPort {
   void save(JackpotHistory history);
 
-  List<JackpotHistory> findByAgentId(String agentId, int limit);
+  List<JackpotHistory> findByAgencyId(String agencyId, int limit);
 }

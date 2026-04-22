@@ -219,7 +219,7 @@ class JackpotServiceImplTest {
               argThat(
                   audit ->
                       "CLAIMED".equals(audit.getStatus())
-                          && AGENT_ID.equals(audit.getAgentId())
+                          && AGENT_ID.equals(audit.getAgencyId())
                           && USER_ID.equals(audit.getUserId())
                           && SESSION_ID.equals(audit.getSessionId())));
     }

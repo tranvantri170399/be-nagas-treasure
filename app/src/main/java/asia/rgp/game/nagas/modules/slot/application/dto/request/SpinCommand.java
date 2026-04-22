@@ -11,7 +11,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @NoArgsConstructor
 public class SpinCommand {
-  private String agentId;
+  private String agencyId;
   private String userId;
   private String gameId;
   private Money betAmount;

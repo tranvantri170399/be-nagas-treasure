@@ -14,24 +14,24 @@ import org.springframework.stereotype.Component;
 public class MockWalletAdapter implements WalletPort {
   private final Map<String, Long> userBalances = new ConcurrentHashMap<>();
 
-  private String walletKey(String agentId, String userId) {
-    return agentId + ":" + userId;
+  private String walletKey(String agencyId, String userId) {
+    return agencyId + ":" + userId;
   }
 
   @Override
-  public long getBalance(String agentId, String userId) {
-    return userBalances.computeIfAbsent(walletKey(agentId, userId), k -> 10000000L);
+  public long getBalance(String agencyId, String userId) {
+    return userBalances.computeIfAbsent(walletKey(agencyId, userId), k -> 10000000L);
   }
 
   @Override
-  public void debit(String agentId, String userId, Money amount, String transactionId) {
-    String key = walletKey(agentId, userId);
-    long currentBalance = getBalance(agentId, userId);
+  public void debit(String agencyId, String userId, Money amount, String transactionId) {
+    String key = walletKey(agencyId, userId);
+    long currentBalance = getBalance(agencyId, userId);
     long debitAmount = Math.round(amount.getAmount() * 100.0);
 
     log.info(
         "[MockWallet] DEBIT | Agent: {} | User: {} | Amount: -{} | TX: {}",
-        agentId,
+        agencyId,
         userId,
         debitAmount,
         transactionId);
@@ -45,14 +45,14 @@ public class MockWalletAdapter implements WalletPort {
   }
 
   @Override
-  public void credit(String agentId, String userId, Money amount, String transactionId) {
-    String key = walletKey(agentId, userId);
-    long currentBalance = getBalance(agentId, userId);
+  public void credit(String agencyId, String userId, Money amount, String transactionId) {
+    String key = walletKey(agencyId, userId);
+    long currentBalance = getBalance(agencyId, userId);
     long creditAmount = Math.round(amount.getAmount() * 100.0);
 
     log.info(
         "[MockWallet] CREDIT | Agent: {} | User: {} | Amount: +{} | TX: {}",
-        agentId,
+        agencyId,
         userId,
         creditAmount,
         transactionId);

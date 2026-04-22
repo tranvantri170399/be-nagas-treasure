@@ -10,6 +10,6 @@ import org.springframework.stereotype.Repository;
 public interface MongoJackpotHistoryRepository
     extends MongoRepository<JackpotHistoryEntity, String> {
 
-  List<JackpotHistoryEntity> findByAgentIdAndJackpotTypeInOrderByCreatedAtDesc(
-      String agentId, List<String> jackpotTypes, Pageable pageable);
+  List<JackpotHistoryEntity> findByAgencyIdAndJackpotTypeInOrderByCreatedAtDesc(
+      String agencyId, List<String> jackpotTypes, Pageable pageable);
 }

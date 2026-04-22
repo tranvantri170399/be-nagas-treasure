@@ -34,19 +34,20 @@ public class CheatService {
   // ============================================================
 
   /** Store a cheat that will be consumed by the next spin. */
-  public void setCheat(String agentId, String userId, CheatCode code, Map<String, Object> value) {
-    String key = cheatKey(agentId, userId);
+  public void setCheat(String agencyId, String userId, CheatCode code, Map<String, Object> value) {
+    String key = cheatKey(agencyId, userId);
     Map<String, Object> cheatData = new HashMap<>();
     cheatData.put("code", code.name());
     cheatData.put("value", value != null ? value : Map.of());
     cache.put(key, cheatData, CHEAT_TTL);
-    log.warn("[CHEAT] SET | agent={} | user={} | code={} | value={}", agentId, userId, code, value);
+    log.warn(
+        "[CHEAT] SET | agent={} | user={} | code={} | value={}", agencyId, userId, code, value);
   }
 
   /** Read and consume the active cheat for a user. Returns null if no cheat is active. */
   @SuppressWarnings("unchecked")
-  public ActiveCheat consumeCheat(String agentId, String userId) {
-    String key = cheatKey(agentId, userId);
+  public ActiveCheat consumeCheat(String agencyId, String userId) {
+    String key = cheatKey(agencyId, userId);
     Optional<Map> raw = cache.get(key, Map.class);
     if (raw.isEmpty()) return null;
 
@@ -55,7 +56,7 @@ public class CheatService {
     String codeName = (String) data.get("code");
     Map<String, Object> value = (Map<String, Object>) data.getOrDefault("value", Map.of());
 
-    log.warn("[CHEAT] CONSUMED | agent={} | user={} | code={}", agentId, userId, codeName);
+    log.warn("[CHEAT] CONSUMED | agent={} | user={} | code={}", agencyId, userId, codeName);
     return new ActiveCheat(CheatCode.valueOf(codeName), value);
   }
 
@@ -64,32 +65,32 @@ public class CheatService {
   // ============================================================
 
   /** Set jackpot pool tiers to specific values. */
-  public void setJackpotPool(String agentId, Map<String, Double> pools) {
+  public void setJackpotPool(String agencyId, Map<String, Double> pools) {
     pools.forEach(
         (tier, amount) ->
-            cache.putHash(JACKPOT_POOL_PREFIX + agentId, tier, String.valueOf(amount)));
-    log.warn("[CHEAT] SET_JACKPOT_POOL | agent={} | pools={}", agentId, pools);
+            cache.putHash(JACKPOT_POOL_PREFIX + agencyId, tier, String.valueOf(amount)));
+    log.warn("[CHEAT] SET_JACKPOT_POOL | agent={} | pools={}", agencyId, pools);
   }
 
   /** Reset jackpot pools to seed values. */
-  public void resetJackpotPool(String agentId) {
+  public void resetJackpotPool(String agencyId) {
     Map<String, Double> seeds =
         Map.of(
             SlotConstants.JACKPOT_DIAMOND, 10000.0,
             SlotConstants.JACKPOT_RUBY, 500.0,
             SlotConstants.JACKPOT_EMERALD, 50.0,
             SlotConstants.JACKPOT_SAPPHIRE, 10.0);
-    setJackpotPool(agentId, seeds);
-    log.warn("[CHEAT] RESET_JACKPOT_POOL | agent={}", agentId);
+    setJackpotPool(agencyId, seeds);
+    log.warn("[CHEAT] RESET_JACKPOT_POOL | agent={}", agencyId);
   }
 
   /** Set player to a specific game mode by manipulating state directly. */
-  public void setGameMode(String agentId, String userId, String gameId, String mode, Money bet) {
+  public void setGameMode(String agencyId, String userId, String gameId, String mode, Money bet) {
     switch (mode) {
       case SlotConstants.MODE_FREE -> {
         SlotState fs =
             SlotState.builder()
-                .agentId(agentId)
+                .agencyId(agencyId)
                 .userId(userId)
                 .gameId(gameId)
                 .sessionId("cheat-session")
@@ -111,7 +112,7 @@ public class CheatService {
         }
         SlotState hw =
             SlotState.builder()
-                .agentId(agentId)
+                .agencyId(agencyId)
                 .userId(userId)
                 .gameId(gameId)
                 .sessionId("cheat-session")
@@ -126,16 +127,16 @@ public class CheatService {
                 .build();
         stateRepository.save(hw);
       }
-      case SlotConstants.MODE_BASE -> stateRepository.delete(agentId, userId, gameId);
+      case SlotConstants.MODE_BASE -> stateRepository.delete(agencyId, userId, gameId);
       default -> log.warn("[CHEAT] Unknown mode: {}", mode);
     }
-    log.warn("[CHEAT] SET_GAME_MODE | agent={} | user={} | mode={}", agentId, userId, mode);
+    log.warn("[CHEAT] SET_GAME_MODE | agent={} | user={} | mode={}", agencyId, userId, mode);
   }
 
   /** Set remaining free spin count. */
-  public void setFreeSpinCount(String agentId, String userId, String gameId, int count) {
+  public void setFreeSpinCount(String agencyId, String userId, String gameId, int count) {
     stateRepository
-        .find(agentId, userId, gameId)
+        .find(agencyId, userId, gameId)
         .ifPresent(
             state -> {
               state.setRemainingFreeSpins(count);
@@ -143,37 +144,38 @@ public class CheatService {
               state.setFreeSpinMode(count > 0);
               stateRepository.save(state);
             });
-    log.warn("[CHEAT] SET_FREE_SPIN_COUNT | agent={} | user={} | count={}", agentId, userId, count);
+    log.warn(
+        "[CHEAT] SET_FREE_SPIN_COUNT | agent={} | user={} | count={}", agencyId, userId, count);
   }
 
   /** Set accumulated win value. */
-  public void setAccumulatedWin(String agentId, String userId, String gameId, double amount) {
+  public void setAccumulatedWin(String agencyId, String userId, String gameId, double amount) {
     stateRepository
-        .find(agentId, userId, gameId)
+        .find(agencyId, userId, gameId)
         .ifPresent(
             state -> {
               state.setAccumulatedWin(amount);
               stateRepository.save(state);
             });
     log.warn(
-        "[CHEAT] SET_ACCUMULATED_WIN | agent={} | user={} | amount={}", agentId, userId, amount);
+        "[CHEAT] SET_ACCUMULATED_WIN | agent={} | user={} | amount={}", agencyId, userId, amount);
   }
 
   /** Clear all game state for an agent. */
-  public void clearAgentState(String agentId, String userId, String gameId) {
-    stateRepository.delete(agentId, userId, gameId);
-    log.warn("[CHEAT] CLEAR_STATE | agent={} | user={}", agentId, userId);
+  public void clearAgentState(String agencyId, String userId, String gameId) {
+    stateRepository.delete(agencyId, userId, gameId);
+    log.warn("[CHEAT] CLEAR_STATE | agent={} | user={}", agencyId, userId);
   }
 
   /** Reset everything for an agent: state + jackpot pools. */
-  public void resetSession(String agentId, String userId, String gameId) {
-    stateRepository.delete(agentId, userId, gameId);
-    resetJackpotPool(agentId);
-    log.warn("[CHEAT] RESET_SESSION | agent={} | user={}", agentId, userId);
+  public void resetSession(String agencyId, String userId, String gameId) {
+    stateRepository.delete(agencyId, userId, gameId);
+    resetJackpotPool(agencyId);
+    log.warn("[CHEAT] RESET_SESSION | agent={} | user={}", agencyId, userId);
   }
 
-  private String cheatKey(String agentId, String userId) {
-    return CHEAT_KEY_PREFIX + agentId + ":" + userId;
+  private String cheatKey(String agencyId, String userId) {
+    return CHEAT_KEY_PREFIX + agencyId + ":" + userId;
   }
 
   /** Immutable cheat data consumed by SpinUseCaseImpl. */
