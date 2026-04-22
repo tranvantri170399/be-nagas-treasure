@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+// NOTE: No 'package' directive here — the wire service path must be
+// /PluginService/ConnectAndCall (not /plugin.PluginService/...) to match be-wsproxy.
+
+option java_package = "asia.rgp.game.nagas.infrastructure.grpc.generated";
+option java_outer_classname = "PluginServiceProto";
+option java_multiple_files = true;
+
+// ─────────────────────────────────────────────
+// Plugin service: WsProxy → Game Plugin (inbound)
+//
+// Service contract must match be-wsproxy's plugin.proto exactly
+// (method names, message types, wire path).
+//
+// Flow:
+//   Player (WS) → WsProxy → gRPC ConnectAndCall / Call
+//                          → game logic
+//                          → ZMQ PUB → WsProxy → Player (via WebSocket)
+// ─────────────────────────────────────────────
+service PluginService {
+  rpc ConnectAndCall (ConnectAndCallRequest) returns (ZmqResponse);
+  rpc Call           (PluginRequest)         returns (PluginResponse);
+  rpc Disconnect     (DisconnectRequest)     returns (ZmqResponse);
+}
+
+// ─────────────────────────────────────────────
+// ConnectAndCall — initial join + first command
+// ─────────────────────────────────────────────
+message PluginUser {
+  string id         = 1;
+  string username   = 2;
+  string sessionId  = 3;
+  string ip         = 4;
+  bytes  parameters = 5; // MessagePack-encoded auth profile
+}
+
+message ConnectAndCallRequest {
+  string     zone       = 1;
+  PluginUser user       = 2;
+  string     pluginName = 3;
+  bytes      data       = 4; // MessagePack: {cmd, agent_id, user_id, game_id, ...}
+}
+
+// ─────────────────────────────────────────────
+// Call — subsequent in-session commands (SPIN, BUY, etc.)
+// username field carries sessionId (set by be-wsproxy)
+// ─────────────────────────────────────────────
+message PluginRequest {
+  string zone       = 1;
+  string pluginName = 2;
+  string username   = 3; // sessionId (as set by be-wsproxy CallUseCaseImpl)
+  bytes  data       = 4; // MessagePack: {cmd, ...params}
+}
+
+message PluginResponse {
+  bytes result = 1;
+}
+
+// ─────────────────────────────────────────────
+// ZMQ response — tells be-wsproxy which topic(s) to route
+// Actual game payload is published via ZMQ PUB separately
+// ─────────────────────────────────────────────
+message ZmqMetadata {
+  repeated string topics = 1;
+}
+
+message ZmqResponse {
+  ZmqMetadata metadata = 1;
+}
+
+// ─────────────────────────────────────────────
+// Disconnect notification from WsProxy
+// ─────────────────────────────────────────────
+message DisconnectRequest {
+  string zone      = 1;
+  string username  = 2;
+  string sessionId = 3;
+}

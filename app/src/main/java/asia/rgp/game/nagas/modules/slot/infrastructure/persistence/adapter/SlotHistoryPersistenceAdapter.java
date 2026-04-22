@@ -8,8 +8,10 @@ import asia.rgp.game.nagas.modules.slot.infrastructure.persistence.repository.Mo
 import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -47,6 +49,25 @@ public class SlotHistoryPersistenceAdapter implements SlotHistoryPort {
     repository.save(entity);
   }
 
+  @Override
+  public List<SlotHistory> findByUser(
+      String agentId, String userId, String gameId, int limit, int offset) {
+    int page = Math.max(offset, 0) / Math.max(limit, 1);
+    int size = Math.max(limit, 1);
+    List<SlotHistoryEntity> rows =
+        (gameId == null || gameId.isBlank())
+            ? repository.findByAgentIdAndUserIdOrderByTimestampDesc(
+                agentId, userId, PageRequest.of(page, size))
+            : repository.findByAgentIdAndUserIdAndGameIdOrderByTimestampDesc(
+                agentId, userId, gameId, PageRequest.of(page, size));
+    return rows.stream().map(this::toDomain).collect(Collectors.toList());
+  }
+
+  @Override
+  public Optional<SlotHistory> findByRoundId(String agentId, String roundId) {
+    return repository.findByAgentIdAndRoundId(agentId, roundId).map(this::toDomain);
+  }
+
   private List<SlotHistoryEntity.WinLineRecord> mapWins(List<WinDetail> wins) {
     if (wins == null || wins.isEmpty()) {
       return Collections.emptyList();
@@ -62,5 +83,45 @@ public class SlotHistoryPersistenceAdapter implements SlotHistoryPort {
                     .type(w.getType())
                     .build())
         .collect(Collectors.toList());
+  }
+
+  private SlotHistory toDomain(SlotHistoryEntity entity) {
+    return SlotHistory.builder()
+        .roundId(entity.getRoundId())
+        .parentRoundId(entity.getParentRoundId())
+        .agentId(entity.getAgentId())
+        .userId(entity.getUserId())
+        .gameId(entity.getGameId())
+        .sessionId(entity.getSessionId())
+        .thisMode(entity.getThisMode())
+        .nextMode(entity.getNextMode())
+        .betAmount(entity.getBetAmount())
+        .totalWin(entity.getTotalWin())
+        .trialMode(entity.isTrialMode())
+        .screen(entity.getScreen())
+        .wins(
+            entity.getWins() == null
+                ? Collections.emptyList()
+                : entity.getWins().stream()
+                    .map(
+                        w ->
+                            WinDetail.builder()
+                                .lineId(w.getPayline())
+                                .symbolId(w.getSymbol())
+                                .count(w.getOccurs())
+                                .amount(
+                                    asia.rgp.game.nagas.shared.domain.model.Money.of(
+                                        w.getWin().doubleValue()))
+                                .type(w.getType())
+                                .build())
+                    .collect(Collectors.toList()))
+        .freeSpinsTotal(entity.getFreeSpinsTotal())
+        .freeSpinsRemain(entity.getFreeSpinsRemain())
+        .respinsRemain(entity.getRespinsRemain())
+        .jackpotWonTier(entity.getJackpotWonTier())
+        .jackpotWonAmount(entity.getJackpotWonAmount())
+        .jackpotContribution(entity.getJackpotContribution())
+        .timestamp(entity.getTimestamp())
+        .build();
   }
 }

@@ -1,8 +1,11 @@
 package asia.rgp.game.nagas.infrastructure.grpc;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.util.*;
+import lombok.extern.slf4j.Slf4j;
+import org.msgpack.core.ExtensionTypeHeader;
 import org.msgpack.core.MessageBufferPacker;
 import org.msgpack.core.MessagePack;
 import org.msgpack.core.MessageUnpacker;
@@ -13,6 +16,7 @@ import org.msgpack.value.ValueType;
  * Helper class for MessagePack encoding/decoding. Used by gRPC adapter to decode incoming data and
  * encode outgoing responses.
  */
+@Slf4j
 public final class MessagePackHelper {
 
   private MessagePackHelper() {}
@@ -22,26 +26,107 @@ public final class MessagePackHelper {
     if (data == null || data.length == 0) {
       return Collections.emptyMap();
     }
+
+    Map<String, Object> decodedByMarioCodec = decodeWithMarioExtensionCodec(data);
+    if (!decodedByMarioCodec.isEmpty()) {
+      log.info(
+          "[MPack-Decode] Mario extension decode success | size={} keys={}",
+          data.length,
+          decodedByMarioCodec.keySet());
+      return decodedByMarioCodec;
+    }
+
     try (MessageUnpacker unpacker = MessagePack.newDefaultUnpacker(data)) {
       Value value = unpacker.unpackValue();
 
-      // Handle array format [type, {payload}] — extract map from index 1
-      if (value.getValueType() == ValueType.ARRAY) {
-        List<Value> array = value.asArrayValue().list();
-        if (array.size() >= 2 && array.get(1).getValueType() == ValueType.MAP) {
-          return valueToMap(array.get(1));
-        }
-        // Single-element array or no map at index 1: try first map found
-        for (Value v : array) {
-          if (v.getValueType() == ValueType.MAP) {
-            return valueToMap(v);
-          }
-        }
+      Map<String, Object> result = valueToMap(value);
+      if (result.isEmpty()) {
+        result = findMapInValue(value);
+      }
+
+      log.info(
+          "[MPack-Decode] rootType={} size={} keys={}",
+          value.getValueType(),
+          data.length,
+          result.keySet());
+
+      if (result.isEmpty()) {
+        log.warn(
+            "[MPack-Decode] Empty decoded payload. rootType={} size={}",
+            value.getValueType(),
+            data.length);
+      }
+
+      return result;
+    }
+  }
+
+  private static Map<String, Object> decodeWithMarioExtensionCodec(byte[] data) {
+    try (MessageUnpacker unpacker = MessagePack.newDefaultUnpacker(data)) {
+      if (!unpacker.hasNext()) {
         return Collections.emptyMap();
       }
 
-      return valueToMap(value);
+      if (unpacker.getNextFormat().getValueType() != ValueType.EXTENSION) {
+        return Collections.emptyMap();
+      }
+
+      ExtensionTypeHeader header = unpacker.unpackExtensionTypeHeader();
+      Object unpacked = decodeMarioExtension(header.getType(), unpacker);
+      return toMap(unpacked);
+
+    } catch (ClassNotFoundException e) {
+      log.debug("[MPack-Decode] Mario extension codec not available: {}", e.getMessage());
+    } catch (Exception e) {
+      log.debug(
+          "[MPack-Decode] Mario extension decode failed | type={} size={} error={}",
+          "unknown",
+          data.length,
+          e.getMessage());
     }
+    return Collections.emptyMap();
+  }
+
+  private static Object decodeMarioExtension(byte extensionType, MessageUnpacker unpacker)
+      throws Exception {
+    Class<?> managerClass =
+        Class.forName("com.luigi.gaas.common.data.msgpkg.MarioPackerExtensionManager");
+    Method getCodecMethod = managerClass.getMethod("getCodec", byte.class);
+    Object codec = getCodecMethod.invoke(null, extensionType);
+    if (codec == null) {
+      return null;
+    }
+
+    Method decodeMethod = codec.getClass().getMethod("decode", MessageUnpacker.class);
+    return decodeMethod.invoke(codec, unpacker);
+  }
+
+  private static Map<String, Object> toMap(Object unpacked) throws Exception {
+    if (unpacked == null) {
+      return Collections.emptyMap();
+    }
+
+    if (unpacked instanceof Map<?, ?> map) {
+      return copyMap(map);
+    }
+
+    if ("com.luigi.gaas.common.data.PuObject".equals(unpacked.getClass().getName())) {
+      Method toMapMethod = unpacked.getClass().getMethod("toMap");
+      Object mapObject = toMapMethod.invoke(unpacked);
+      if (mapObject instanceof Map<?, ?> map) {
+        return copyMap(map);
+      }
+    }
+
+    return Collections.emptyMap();
+  }
+
+  private static Map<String, Object> copyMap(Map<?, ?> map) {
+    Map<String, Object> result = new LinkedHashMap<>();
+    for (Map.Entry<?, ?> entry : map.entrySet()) {
+      result.put(String.valueOf(entry.getKey()), entry.getValue());
+    }
+    return result;
   }
 
   /** Encode a success response in format: [5, {cmd, c:0, ...data}] */
@@ -80,7 +165,6 @@ public final class MessagePackHelper {
 
   // ===== Internal helpers =====
 
-  @SuppressWarnings("unchecked")
   private static void packMap(MessageBufferPacker packer, Map<String, Object> map)
       throws IOException {
     packer.packMapHeader(map.size());
@@ -90,14 +174,38 @@ public final class MessagePackHelper {
     }
   }
 
+  /**
+   * Pack integer using signed MessagePack types only. Avoids uint8/uint16/uint32/uint64 (0xcc–0xcf)
+   * which PuElementSerializer (Luigi GaaS) in be-wsproxy does not support. Uses fixint for
+   * -32..127, int64 (0xd3) for all other values.
+   */
+  private static void packSignedLong(MessageBufferPacker packer, long v) throws IOException {
+    if (v >= -32 && v <= 127) {
+      packer.packLong(v); // fixint / negative fixint — always 1 byte, universally safe
+    } else {
+      packer.addPayload(
+          new byte[] {
+            (byte) 0xd3,
+            (byte) (v >> 56),
+            (byte) (v >> 48),
+            (byte) (v >> 40),
+            (byte) (v >> 32),
+            (byte) (v >> 24),
+            (byte) (v >> 16),
+            (byte) (v >> 8),
+            (byte) v
+          });
+    }
+  }
+
   @SuppressWarnings("unchecked")
   private static void packValue(MessageBufferPacker packer, Object value) throws IOException {
     if (value == null) {
       packer.packNil();
     } else if (value instanceof Integer i) {
-      packer.packInt(i);
+      packSignedLong(packer, i);
     } else if (value instanceof Long l) {
-      packer.packLong(l);
+      packSignedLong(packer, l);
     } else if (value instanceof BigDecimal bd) {
       packer.packDouble(bd.doubleValue());
     } else if (value instanceof Double d) {
@@ -130,6 +238,46 @@ public final class MessagePackHelper {
       result.put(key, valueToObject(entry.getValue()));
     }
     return result;
+  }
+
+  private static Map<String, Object> findMapInValue(Value value) throws IOException {
+    if (value == null) {
+      return Collections.emptyMap();
+    }
+
+    return switch (value.getValueType()) {
+      case MAP -> valueToMap(value);
+      case ARRAY -> {
+        for (Value item : value.asArrayValue()) {
+          Map<String, Object> nested = findMapInValue(item);
+          if (!nested.isEmpty()) {
+            yield nested;
+          }
+        }
+        yield Collections.emptyMap();
+      }
+      case BINARY -> decodeNestedBinary(value.asBinaryValue().asByteArray());
+      case EXTENSION -> decodeNestedBinary(value.asExtensionValue().getData());
+      default -> Collections.emptyMap();
+    };
+  }
+
+  private static Map<String, Object> decodeNestedBinary(byte[] nestedData) throws IOException {
+    if (nestedData == null || nestedData.length == 0) {
+      return Collections.emptyMap();
+    }
+
+    try (MessageUnpacker nestedUnpacker = MessagePack.newDefaultUnpacker(nestedData)) {
+      Value nestedValue = nestedUnpacker.unpackValue();
+      Map<String, Object> result = valueToMap(nestedValue);
+      if (result.isEmpty()) {
+        result = findMapInValue(nestedValue);
+      }
+      return result;
+    } catch (Exception e) {
+      log.debug("[MPack-Decode] Nested binary decode failed: {}", e.getMessage());
+      return Collections.emptyMap();
+    }
   }
 
   private static Object valueToObject(Value value) {
