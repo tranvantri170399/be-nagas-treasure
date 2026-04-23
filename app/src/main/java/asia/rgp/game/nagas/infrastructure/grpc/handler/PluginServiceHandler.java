@@ -29,6 +29,7 @@ import asia.rgp.game.nagas.modules.slot.application.port.out.SlotHistoryPort;
 import asia.rgp.game.nagas.modules.slot.application.port.out.WalletPort;
 import asia.rgp.game.nagas.modules.slot.domain.model.SlotHistory;
 import com.google.protobuf.ByteString;
+import com.luigi.gaas.common.data.PuElement;
 import io.grpc.stub.StreamObserver;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -192,7 +193,7 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
           sessionId);
 
       String topic = ZmqTopicHelper.buildTopic(zone, sessionId);
-      zmqPublisher.publish(topic, responseData);
+      zmqPublisher.publish(topic, toPuElement(responseData));
       log.info("[gRPC] ConnectAndCall | published response topic={} session={}", topic, sessionId);
 
       observer.onNext(zmqResponseWithTopic(topic));
@@ -313,7 +314,7 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
           resolvedSessionId);
 
       String topic = ZmqTopicHelper.buildTopic(zone, resolvedSessionId);
-      zmqPublisher.publish(topic, responseData);
+      zmqPublisher.publish(topic, toPuElement(responseData));
       log.info("[gRPC] Call | published response topic={} session={}", topic, resolvedSessionId);
 
       observer.onNext(
@@ -349,7 +350,8 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
                 "agency",
                 removed.getAgency());
         String internalTopic = buildInternalTopic("disconnect", removed.getPluginName());
-        zmqPublisher.publish(internalTopic, MessagePackHelper.encodeResponse(0, event));
+        zmqPublisher.publish(
+            internalTopic, toPuElement(MessagePackHelper.encodeResponse(0, event)));
       } catch (Exception ex) {
         log.warn(
             "[gRPC] Failed to publish internal disconnect event for session={}", sessionId, ex);
@@ -629,6 +631,10 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
     return value == null ? 0.0 : value.doubleValue();
   }
 
+  private PuElement toPuElement(byte[] encodedPayload) throws Exception {
+    return MessagePackHelper.unpackPuElement(encodedPayload);
+  }
+
   private void publishErrorAndComplete(
       byte[] rawData,
       int errorCode,
@@ -649,7 +655,7 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
           decoded.keySet());
       byte[] errBytes = MessagePackHelper.encodeError(cmdCode, errorCode, msg);
       String topic = ZmqTopicHelper.buildTopic(zone, sessionId);
-      zmqPublisher.publish(topic, errBytes);
+      zmqPublisher.publish(topic, toPuElement(errBytes));
       log.warn(
           "[gRPC] publishErrorAndComplete | published error topic={} session={}", topic, sessionId);
       observer.onNext(zmqResponseWithTopic(topic));
