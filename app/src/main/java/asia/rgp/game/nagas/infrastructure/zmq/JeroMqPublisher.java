@@ -3,7 +3,6 @@ package asia.rgp.game.nagas.infrastructure.zmq;
 import asia.rgp.game.nagas.infrastructure.grpc.MessagePackHelper;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import lombok.extern.slf4j.Slf4j;
@@ -86,8 +85,6 @@ public class JeroMqPublisher implements ZmqPublisherPort {
 
     try {
       return String.valueOf(MessagePackHelper.decode(payload));
-    } catch (IOException e) {
-      return "<unreadable: " + e.getMessage() + ">";
     } catch (Exception e) {
       return "<unreadable: " + e.getMessage() + ">";
     }
