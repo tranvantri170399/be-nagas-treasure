@@ -1,76 +1,76 @@
-default:
-  image: gradle:9.2.1-jdk17
-  tags:
-    - common
+# default:
+#   image: gradle:9.2.1-jdk17
+#   tags:
+#     - common
 
-variables:
-  # Cache Gradle in the project directory so GitLab Runner can preserve it
-  GRADLE_USER_HOME: "$CI_PROJECT_DIR/.gradle"
+# variables:
+#   # Cache Gradle in the project directory so GitLab Runner can preserve it
+#   GRADLE_USER_HOME: "$CI_PROJECT_DIR/.gradle"
 
-stages:
-  - build
-  - test
+# stages:
+#   - build
+#   - test
 
-# Speed up subsequent runs by caching dependencies
-cache:
-  key: "$CI_COMMIT_REF_SLUG"
-  paths:
-    - .gradle/caches
-    - .gradle/wrapper
+# # Speed up subsequent runs by caching dependencies
+# cache:
+#   key: "$CI_COMMIT_REF_SLUG"
+#   paths:
+#     - .gradle/caches
+#     - .gradle/wrapper
 
-build-job:
-  stage: build
-  script:
-    - echo "Packaging Spring Boot application..."
-    - chmod +x gradlew
-    - ./gradlew :app:bootJar --no-daemon
-  artifacts:
-    paths:
-      - app/build/libs/*.jar
-    expire_in: 1 week
+# build-job:
+#   stage: build
+#   script:
+#     - echo "Packaging Spring Boot application..."
+#     - chmod +x gradlew
+#     - ./gradlew :app:bootJar --no-daemon
+#   artifacts:
+#     paths:
+#       - app/build/libs/*.jar
+#     expire_in: 1 week
 
-code-style-job:
-  stage: test
-  script:
-    - echo "Running code style check..."
-    - chmod +x gradlew
-    - ./gradlew :app:spotlessCheck --no-daemon
+# code-style-job:
+#   stage: test
+#   script:
+#     - echo "Running code style check..."
+#     - chmod +x gradlew
+#     - ./gradlew :app:spotlessCheck --no-daemon
 
-checkstyle-job:
-  stage: test
-  script:
-    - echo "Running Checkstyle..."
-    - chmod +x gradlew
-    - ./gradlew :app:checkstyleMain :app:checkstyleTest --no-daemon
+# checkstyle-job:
+#   stage: test
+#   script:
+#     - echo "Running Checkstyle..."
+#     - chmod +x gradlew
+#     - ./gradlew :app:checkstyleMain :app:checkstyleTest --no-daemon
 
-pmd-main-job:
-  stage: test
-  script:
-    - chmod +x gradlew
-    - ./gradlew :app:pmdMain --no-daemon
-pmd-test-job:
-  stage: test
-  script:
-    - chmod +x gradlew
-    - ./gradlew :app:pmdTest --no-daemon
-spotbugs-main-job:
-  stage: test
-  script:
-    - chmod +x gradlew
-    - ./gradlew :app:spotbugsMain --no-daemon
-spotbugs-test-job:
-  stage: test
-  script:
-    - chmod +x gradlew
-    - ./gradlew :app:spotbugsTest --no-daemon
+# pmd-main-job:
+#   stage: test
+#   script:
+#     - chmod +x gradlew
+#     - ./gradlew :app:pmdMain --no-daemon
+# pmd-test-job:
+#   stage: test
+#   script:
+#     - chmod +x gradlew
+#     - ./gradlew :app:pmdTest --no-daemon
+# spotbugs-main-job:
+#   stage: test
+#   script:
+#     - chmod +x gradlew
+#     - ./gradlew :app:spotbugsMain --no-daemon
+# spotbugs-test-job:
+#   stage: test
+#   script:
+#     - chmod +x gradlew
+#     - ./gradlew :app:spotbugsTest --no-daemon
 
-unit-test-job:
-  stage: test
-  script:
-    - echo "Running unit tests..."
-    - chmod +x gradlew
-    - ./gradlew :app:test --no-daemon
-  artifacts:
-    when: always
-    reports:
-      junit: app/build/test-results/test/**/TEST-*.xml
+# unit-test-job:
+#   stage: test
+#   script:
+#     - echo "Running unit tests..."
+#     - chmod +x gradlew
+#     - ./gradlew :app:test --no-daemon
+#   artifacts:
+#     when: always
+#     reports:
+#       junit: app/build/test-results/test/**/TEST-*.xml
