@@ -94,6 +94,14 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
     String zone = request.getZone();
     String sessionId = request.getUser().getSessionId();
     String userId = request.getUser().getId();
+    log.info(
+        "[gRPC] ConnectAndCall | pluginName={} zone={} session={} userId={} dataBytes={} userParamBytes={}",
+        request.getPluginName(),
+        zone,
+        sessionId,
+        userId,
+        request.getData().size(),
+        request.getUser().getParameters().size());
     if (userId == null || userId.isBlank()) {
       log.warn(
           "[gRPC] ConnectAndCall | PluginUser.id is empty for session={}, downstream operations may fail",
@@ -105,6 +113,10 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
       Map<String, Object> payload = MessagePackHelper.decode(rawData);
       Map<String, Object> userParams =
           MessagePackHelper.decode(request.getUser().getParameters().toByteArray());
+      log.info(
+          "[gRPC] ConnectAndCall | decoded payloadKeys={} userParamKeys={}",
+          payload.keySet(),
+          userParams.keySet());
       String token = extractToken(userParams);
       if (token == null) {
         log.warn(
@@ -133,7 +145,7 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
       sessionStore.put(sessionId, auth);
 
       log.info(
-          "[gRPC] ConnectAndCall | rawDataBytes={} decodedPayload={} authAgency={}",
+          "[gRPC] ConnectAndCall | rawDataBytes={} decodedPayload={} authAgency={} authStored=true",
           rawData.length,
           payload,
           agency);
@@ -150,6 +162,12 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
       PluginCommand command =
           PluginCommand.fromCode(cmdCode)
               .orElseThrow(() -> new IllegalArgumentException("Unknown cmd: " + cmdCode));
+      log.info(
+          "[gRPC] ConnectAndCall | routing command={}({}) session={} zone={}",
+          command,
+          command.getCode(),
+          sessionId,
+          zone);
 
       WalletRequestContext.set(
           WalletRequestContext.Context.builder()
@@ -164,9 +182,15 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
       } finally {
         WalletRequestContext.clear();
       }
+      log.info(
+          "[gRPC] ConnectAndCall | handler completed command={} responseBytes={} session={}",
+          command,
+          responseData == null ? 0 : responseData.length,
+          sessionId);
 
       String topic = ZmqTopicHelper.buildTopic(zone, sessionId);
       zmqPublisher.publish(topic, responseData);
+      log.info("[gRPC] ConnectAndCall | published response topic={} session={}", topic, sessionId);
 
       observer.onNext(zmqResponseWithTopic(topic));
       observer.onCompleted();
@@ -275,6 +299,7 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
     String zone = request.getZone();
     String sessionId = request.getUsername(); // be-wsproxy puts sessionId in username
     byte[] rawData = request.getData().toByteArray();
+    log.info("[gRPC] Call | zone={} session={} dataBytes={}", zone, sessionId, rawData.length);
 
     try {
       Map<String, Object> payload = MessagePackHelper.decode(rawData);
@@ -284,7 +309,12 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
               .orElseThrow(() -> new IllegalArgumentException("SESSION_NOT_FOUND"));
       payload.put("user_id", auth.getUserId());
       payload.put("agency_id", auth.getAgency());
-      log.info("[gRPC] Call | rawDataBytes={} decodedPayload={}", rawData.length, payload);
+      log.info(
+          "[gRPC] Call | decoded payloadKeys={} payload={} authAgency={} authUserId={}",
+          payload.keySet(),
+          payload,
+          auth.getAgency(),
+          auth.getUserId());
       int cmdCode = resolveCmdCode(payload);
 
       log.info("[gRPC] Call | cmd={} session={} zone={}", cmdCode, sessionId, zone);
@@ -306,9 +336,15 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
       } finally {
         WalletRequestContext.clear();
       }
+      log.info(
+          "[gRPC] Call | handler completed command={} responseBytes={} session={}",
+          command,
+          responseData == null ? 0 : responseData.length,
+          sessionId);
 
       String topic = ZmqTopicHelper.buildTopic(zone, sessionId);
       zmqPublisher.publish(topic, responseData);
+      log.info("[gRPC] Call | published response topic={} session={}", topic, sessionId);
 
       observer.onNext(
           PluginResponse.newBuilder().setResult(ByteString.copyFrom(responseData)).build());
@@ -425,10 +461,13 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
    */
   private int resolveCmdCode(Map<String, Object> payload) {
     // Standard format: {"cmd": 1005} or {"cmd": "1005"}
+    log.debug("[gRPC] resolveCmdCode | keys={}", payload.keySet());
     Integer topLevel = parseCmdValue(payload.get("cmd"));
     if (topLevel != null) {
+      log.debug("[gRPC] resolveCmdCode | resolved from top-level cmd={}", topLevel);
       return topLevel;
     }
+
     log.warn(
         "[gRPC] Missing cmd in payload. topLevelKeys={} payload={}", payload.keySet(), payload);
     return -1;
@@ -456,6 +495,14 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
       Map<String, Object> payload)
       throws Exception {
 
+    log.info(
+        "[gRPC] routeToHandler | command={} connectionId={} sessionId={} zoneId={} payloadKeys={}",
+        command,
+        connectionId,
+        sessionId,
+        zoneId,
+        payload.keySet());
+
     return switch (command) {
       case PING ->
           MessagePackHelper.encodeResponse(PluginCommand.PING.getCode(), Map.of("pong", true));
@@ -472,6 +519,11 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
         String userId = payloadString(payload, "user_id", "userId", "user_id", "userId", "");
         String gameId =
             payloadString(payload, "game_id", "gameId", "game_id", "gameId", "nagas_treasure");
+        log.info(
+            "[gRPC] routeToHandler | LAST_SESSION agencyId={} userId={} gameId={}",
+            agencyId,
+            userId,
+            gameId);
         yield spinHandler.handleLastSession(agencyId, userId, gameId, sessionId);
       }
 
@@ -479,6 +531,7 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
         String agencyId =
             payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
         String userId = payloadString(payload, "user_id", "userId", "user_id", "userId", "");
+        log.info("[gRPC] routeToHandler | GET_BALANCE agencyId={} userId={}", agencyId, userId);
         yield MessagePackHelper.encodeResponse(
             PluginCommand.GET_BALANCE.getCode(),
             Map.of(
@@ -497,6 +550,13 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
         String gameId = payloadString(payload, "game_id", "gameId", "game_id", "gameId", "");
         int limit = intValue(payload.get("limit"), 20);
         int offset = intValue(payload.get("offset"), 0);
+        log.info(
+            "[gRPC] routeToHandler | GET_SPIN_LIST agencyId={} userId={} gameId={} limit={} offset={}",
+            agencyId,
+            userId,
+            gameId,
+            limit,
+            offset);
         yield MessagePackHelper.encodeResponse(
             PluginCommand.GET_SPIN_LIST.getCode(),
             Map.of(
@@ -509,6 +569,7 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
         String agencyId =
             payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
         String roundId = String.valueOf(payload.getOrDefault("roundId", ""));
+        log.info("[gRPC] routeToHandler | GET_PREV_SPIN agencyId={} roundId={}", agencyId, roundId);
         if (roundId.isBlank()) {
           throw new IllegalArgumentException("MISSING_ROUND_ID");
         }
@@ -608,12 +669,29 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
     try {
       Map<String, Object> decoded = MessagePackHelper.decode(rawData);
       int cmdCode = resolveCmdCode(decoded);
+      log.warn(
+          "[gRPC] publishErrorAndComplete | errorCode={} msg={} session={} zone={} cmd={} decodedKeys={}",
+          errorCode,
+          msg,
+          sessionId,
+          zone,
+          cmdCode,
+          decoded.keySet());
       byte[] errBytes = MessagePackHelper.encodeError(cmdCode, errorCode, msg);
       String topic = ZmqTopicHelper.buildTopic(zone, sessionId);
       zmqPublisher.publish(topic, errBytes);
+      log.warn(
+          "[gRPC] publishErrorAndComplete | published error topic={} session={}", topic, sessionId);
       observer.onNext(zmqResponseWithTopic(topic));
     } catch (Exception ex) {
-      log.error("[gRPC] Failed to publish error response: {}", ex.getMessage());
+      log.error(
+          "[gRPC] Failed to publish error response | session={} zone={} errorCode={} msg={} cause={}",
+          sessionId,
+          zone,
+          errorCode,
+          msg,
+          ex.getMessage(),
+          ex);
       observer.onNext(ZmqResponse.newBuilder().build());
     }
     observer.onCompleted();
@@ -624,10 +702,21 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
     try {
       Map<String, Object> decoded = MessagePackHelper.decode(rawData);
       int cmdCode = resolveCmdCode(decoded);
+      log.warn(
+          "[gRPC] sendCallError | errorCode={} msg={} cmd={} decodedKeys={}",
+          errorCode,
+          msg,
+          cmdCode,
+          decoded.keySet());
       byte[] errBytes = MessagePackHelper.encodeError(cmdCode, errorCode, msg);
       observer.onNext(PluginResponse.newBuilder().setResult(ByteString.copyFrom(errBytes)).build());
     } catch (Exception ex) {
-      log.error("[gRPC] Failed to encode call error response: {}", ex.getMessage());
+      log.error(
+          "[gRPC] Failed to encode call error response | errorCode={} msg={} cause={}",
+          errorCode,
+          msg,
+          ex.getMessage(),
+          ex);
       observer.onNext(PluginResponse.newBuilder().build());
     }
     observer.onCompleted();
