@@ -28,6 +28,8 @@ import asia.rgp.game.nagas.infrastructure.zmq.ZmqPublisherPort;
 import asia.rgp.game.nagas.modules.slot.application.port.out.SlotHistoryPort;
 import asia.rgp.game.nagas.modules.slot.application.port.out.WalletPort;
 import asia.rgp.game.nagas.modules.slot.domain.model.SlotHistory;
+import asia.rgp.game.nagas.shared.domain.exception.DomainException;
+import asia.rgp.game.nagas.shared.error.ErrorCode;
 import com.google.protobuf.ByteString;
 import com.luigi.gaas.common.data.PuElement;
 import io.grpc.stub.StreamObserver;
@@ -199,6 +201,15 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
       observer.onNext(zmqResponseWithTopic(topic));
       observer.onCompleted();
 
+    } catch (DomainException e) {
+      int mappedErrorCode = mapDomainErrorCode(e.getErrorCodeEnum());
+      log.warn(
+          "[gRPC] ConnectAndCall domain error session={} code={} errorCode={} message={}",
+          sessionId,
+          mappedErrorCode,
+          e.getErrorCode(),
+          e.getMessage());
+      publishErrorAndComplete(rawData, mappedErrorCode, e.getMessage(), zone, sessionId, observer);
     } catch (IllegalArgumentException e) {
       log.warn("[gRPC] ConnectAndCall bad request session={}: {}", sessionId, e.getMessage());
       publishErrorAndComplete(rawData, 400, e.getMessage(), zone, sessionId, observer);
@@ -324,6 +335,15 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
       observer.onNext(PluginResponse.newBuilder().build());
       observer.onCompleted();
 
+    } catch (DomainException e) {
+      int mappedErrorCode = mapDomainErrorCode(e.getErrorCodeEnum());
+      log.warn(
+          "[gRPC] Call domain error session={} code={} errorCode={} message={}",
+          resolvedSessionId,
+          mappedErrorCode,
+          e.getErrorCode(),
+          e.getMessage());
+      sendCallError(rawData, mappedErrorCode, e.getMessage(), observer);
     } catch (IllegalArgumentException e) {
       log.warn("[gRPC] Call bad request session={}: {}", resolvedSessionId, e.getMessage());
       sendCallError(rawData, 400, e.getMessage(), observer);
@@ -632,6 +652,29 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
 
   private double toDouble(BigDecimal value) {
     return value == null ? 0.0 : value.doubleValue();
+  }
+
+  private int mapDomainErrorCode(ErrorCode errorCode) {
+    if (errorCode == null) {
+      return 400;
+    }
+
+    return switch (errorCode) {
+      case UNAUTHORIZED, TOKEN_EXPIRED -> 401;
+      case FORBIDDEN, INVALID_SIGNATURE -> 403;
+      case NOT_FOUND, ENTITY_NOT_FOUND, GAME_NOT_FOUND, SESSION_NOT_FOUND -> 404;
+      case CONFLICT, DUPLICATE_ENTRY, TRANSACTION_ALREADY_PROCESSED -> 409;
+      case INSUFFICIENT_BALANCE -> 402;
+      case BALANCE_SERVICE_UNAVAILABLE, EXTERNAL_SERVICE_UNAVAILABLE, EXTERNAL_API_TIMEOUT -> 503;
+      case EXTERNAL_API_BAD_GATEWAY -> 502;
+      case INTERNAL_SERVER_ERROR,
+          DATABASE_ERROR,
+          INFRASTRUCTURE_ERROR,
+          APPLICATION_ERROR,
+          BALANCE_SERVICE_ERROR ->
+          500;
+      default -> 400;
+    };
   }
 
   private PuElement toPuElement(byte[] encodedPayload) throws Exception {
