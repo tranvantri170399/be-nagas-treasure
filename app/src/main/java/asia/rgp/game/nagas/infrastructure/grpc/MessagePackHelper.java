@@ -104,7 +104,11 @@ public final class MessagePackHelper {
       return copyMap(map);
     }
     if (unpacked instanceof Iterable<?> iterable) {
-      return findFirstMap(iterable);
+      Map<String, Object> firstMap = findFirstMap(iterable);
+      if (!firstMap.isEmpty()) {
+        return firstMap;
+      }
+      return mapFromIterable(iterable);
     }
 
     Map<String, Object> reflectedMap = invokeMapMethod(unpacked, "toMap");
@@ -132,6 +136,18 @@ public final class MessagePackHelper {
       }
     }
     return Collections.emptyMap();
+  }
+
+  private static Map<String, Object> mapFromIterable(Iterable<?> iterable) {
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("_type", "array");
+    List<Object> items = new ArrayList<>();
+    for (Object item : iterable) {
+      Object normalized = normalizeValue(item);
+      items.add(normalized);
+    }
+    result.put("items", items);
+    return result;
   }
 
   private static Map<String, Object> copyMap(Map<?, ?> map) {
