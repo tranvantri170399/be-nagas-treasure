@@ -94,12 +94,14 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
     String zone = request.getZone();
     String sessionId = request.getUser().getSessionId();
     String userId = request.getUser().getId();
+    String username = request.getUser().getUsername();
     log.info(
-        "[gRPC] ConnectAndCall | pluginName={} zone={} session={} userId={} dataBytes={} userParamBytes={}",
+        "[gRPC] ConnectAndCall | pluginName={} zone={} session={} userId={} username={} dataBytes={} userParamBytes={}",
         request.getPluginName(),
         zone,
         sessionId,
         userId,
+        username,
         request.getData().size(),
         request.getUser().getParameters().size());
     if (userId == null || userId.isBlank()) {
@@ -137,6 +139,7 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
           SessionAuth.builder()
               .sessionId(sessionId)
               .userId(userId)
+              .username(username)
               .agency(agency)
               .token(token)
               .zone(zone)
@@ -297,27 +300,32 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
   @Override
   public void call(PluginRequest request, StreamObserver<PluginResponse> observer) {
     String zone = request.getZone();
-    String sessionId = request.getUsername(); // be-wsproxy puts sessionId in username
+    String lookupValue = request.getUsername();
+    String resolvedSessionId = lookupValue;
     byte[] rawData = request.getData().toByteArray();
-    log.info("[gRPC] Call | zone={} session={} dataBytes={}", zone, sessionId, rawData.length);
+    log.info(
+        "[gRPC] Call | zone={} lookupValue={} dataBytes={}", zone, lookupValue, rawData.length);
 
     try {
       Map<String, Object> payload = MessagePackHelper.decode(rawData);
       SessionAuth auth =
           sessionStore
-              .get(sessionId)
+              .getByUsernameOrSessionId(lookupValue)
               .orElseThrow(() -> new IllegalArgumentException("SESSION_NOT_FOUND"));
+      resolvedSessionId = auth.getSessionId();
       payload.put("user_id", auth.getUserId());
       payload.put("agency_id", auth.getAgency());
       log.info(
-          "[gRPC] Call | decoded payloadKeys={} payload={} authAgency={} authUserId={}",
+          "[gRPC] Call | decoded payloadKeys={} payload={} authAgency={} authUserId={} authUsername={} resolvedSessionId={}",
           payload.keySet(),
           payload,
           auth.getAgency(),
-          auth.getUserId());
+          auth.getUserId(),
+          auth.getUsername(),
+          resolvedSessionId);
       int cmdCode = resolveCmdCode(payload);
 
-      log.info("[gRPC] Call | cmd={} session={} zone={}", cmdCode, sessionId, zone);
+      log.info("[gRPC] Call | cmd={} session={} zone={}", cmdCode, resolvedSessionId, zone);
 
       PluginCommand command =
           PluginCommand.fromCode(cmdCode)
@@ -325,14 +333,14 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
 
       WalletRequestContext.set(
           WalletRequestContext.Context.builder()
-              .sessionId(sessionId)
+              .sessionId(resolvedSessionId)
               .userId(auth.getUserId())
               .agency(auth.getAgency())
               .token(auth.getToken())
               .build());
       byte[] responseData;
       try {
-        responseData = routeToHandler(command, sessionId, sessionId, zone, payload);
+        responseData = routeToHandler(command, resolvedSessionId, resolvedSessionId, zone, payload);
       } finally {
         WalletRequestContext.clear();
       }
@@ -340,21 +348,21 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
           "[gRPC] Call | handler completed command={} responseBytes={} session={}",
           command,
           responseData == null ? 0 : responseData.length,
-          sessionId);
+          resolvedSessionId);
 
-      String topic = ZmqTopicHelper.buildTopic(zone, sessionId);
+      String topic = ZmqTopicHelper.buildTopic(zone, resolvedSessionId);
       zmqPublisher.publish(topic, responseData);
-      log.info("[gRPC] Call | published response topic={} session={}", topic, sessionId);
+      log.info("[gRPC] Call | published response topic={} session={}", topic, resolvedSessionId);
 
       observer.onNext(
           PluginResponse.newBuilder().setResult(ByteString.copyFrom(responseData)).build());
       observer.onCompleted();
 
     } catch (IllegalArgumentException e) {
-      log.warn("[gRPC] Call bad request session={}: {}", sessionId, e.getMessage());
+      log.warn("[gRPC] Call bad request session={}: {}", resolvedSessionId, e.getMessage());
       sendCallError(rawData, 400, e.getMessage(), observer);
     } catch (Exception e) {
-      log.error("[gRPC] Call error session={}: {}", sessionId, e.getMessage(), e);
+      log.error("[gRPC] Call error session={}: {}", resolvedSessionId, e.getMessage(), e);
       sendCallError(rawData, 500, "Internal server error", observer);
     }
   }
