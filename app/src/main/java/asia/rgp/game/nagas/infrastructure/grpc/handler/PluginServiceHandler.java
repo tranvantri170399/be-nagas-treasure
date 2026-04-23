@@ -95,6 +95,7 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
     String sessionId = request.getUser().getSessionId();
     String userId = request.getUser().getId();
     String username = request.getUser().getUsername();
+    String effectiveUsername = username == null || username.isBlank() ? sessionId : username;
     log.info(
         "[gRPC] ConnectAndCall | pluginName={} zone={} session={} userId={} username={} dataBytes={} userParamBytes={}",
         request.getPluginName(),
@@ -122,10 +123,9 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
       String token = extractToken(userParams);
       if (token == null) {
         log.warn(
-            "[gRPC] Missing token in user.parameters. keys={} session={}",
+            "[gRPC] Missing token in user.parameters. keys={} session={}; continuing without token",
             userParams.keySet(),
             sessionId);
-        throw new IllegalArgumentException("MISSING_AUTH_TOKEN");
       }
       String agency = extractAgency(userParams);
       if (agency == null) {
@@ -139,7 +139,7 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
           SessionAuth.builder()
               .sessionId(sessionId)
               .userId(userId)
-              .username(username)
+              .username(effectiveUsername)
               .agency(agency)
               .token(token)
               .zone(zone)
@@ -216,75 +216,37 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
   }
 
   private String extractToken(Map<String, Object> userParams) {
-    String token = asNonBlankString(userParams.get("token"));
-    if (token != null) {
-      return token;
-    }
-
-    token = asNonBlankString(userParams.get("accessToken"));
-    if (token != null) {
-      return token;
-    }
-
-    token = asNonBlankString(userParams.get("access_token"));
-    if (token != null) {
-      return token;
-    }
-
-    Object nestedUserAgent = userParams.get("userAgent");
-    if (nestedUserAgent instanceof Map<?, ?> map) {
-      token = asNonBlankString(map.get("token"));
-      if (token != null) {
-        return token;
-      }
-      token = asNonBlankString(map.get("accessToken"));
-      if (token != null) {
-        return token;
-      }
-      token = asNonBlankString(map.get("access_token"));
-      if (token != null) {
-        return token;
-      }
-    }
-
-    return null;
+    return findNestedStringValue(userParams, "token", "accessToken", "access_token");
   }
 
   private String extractAgency(Map<String, Object> userParams) {
-    String agency = asNonBlankString(userParams.get("agency"));
-    if (agency != null) {
-      return agency;
-    }
+    return findNestedStringValue(
+        userParams, "agency", "agencyId", "agentId", "agency_id", "operatorId");
+  }
 
-    agency = asNonBlankString(userParams.get("agencyId"));
-    if (agency != null) {
-      return agency;
-    }
-
-    agency = asNonBlankString(userParams.get("agentId"));
-    if (agency != null) {
-      return agency;
-    }
-
-    agency = asNonBlankString(userParams.get("agency_id"));
-    if (agency != null) {
-      return agency;
-    }
-
-    Object nestedUserAgent = userParams.get("userAgent");
-    if (nestedUserAgent instanceof Map<?, ?> map) {
-      agency = asNonBlankString(map.get("agency_id"));
-      if (agency != null) {
-        return agency;
+  private String findNestedStringValue(Object source, String... keys) {
+    if (source instanceof Map<?, ?> map) {
+      for (String key : keys) {
+        String direct = asNonBlankString(map.get(key));
+        if (direct != null) {
+          return direct;
+        }
       }
-      agency = asNonBlankString(map.get("agencyId"));
-      if (agency != null) {
-        return agency;
+      for (Object nested : map.values()) {
+        String nestedValue = findNestedStringValue(nested, keys);
+        if (nestedValue != null) {
+          return nestedValue;
+        }
       }
+      return null;
+    }
 
-      agency = asNonBlankString(map.get("agentId"));
-      if (agency != null) {
-        return agency;
+    if (source instanceof Iterable<?> iterable) {
+      for (Object item : iterable) {
+        String nestedValue = findNestedStringValue(item, keys);
+        if (nestedValue != null) {
+          return nestedValue;
+        }
       }
     }
 

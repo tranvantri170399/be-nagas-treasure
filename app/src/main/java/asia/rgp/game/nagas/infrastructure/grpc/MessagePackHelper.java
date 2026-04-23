@@ -1,12 +1,16 @@
 package asia.rgp.game.nagas.infrastructure.grpc;
 
 import com.luigi.gaas.common.data.PuArrayList;
+import com.luigi.gaas.common.data.PuElement;
 import com.luigi.gaas.common.data.PuObject;
 import com.luigi.gaas.common.data.msgpkg.MarioBytesCodec;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 
@@ -26,17 +30,37 @@ public final class MessagePackHelper {
       return Collections.emptyMap();
     }
     try {
-      Object unpacked = MarioBytesCodec.unpack(data);
-      if (unpacked instanceof PuObject puObject) {
-        return puObject.toMap();
+      Map<String, Object> decoded = toMap(MarioBytesCodec.unpack(data));
+      if (!decoded.isEmpty()) {
+        return decoded;
       }
       log.warn(
           "[decode] Unexpected PuElement root type: {}",
-          unpacked == null ? "null" : unpacked.getClass().getName());
+          describeType(MarioBytesCodec.unpack(data)));
       return Collections.emptyMap();
     } catch (Exception e) {
       log.warn("[decode] Mario unpack failed ({} bytes): {}", data.length, e.getMessage());
       return Collections.emptyMap();
+    }
+  }
+
+  public static PuElement unpackPuElement(byte[] data) throws IOException {
+    if (data == null || data.length == 0) {
+      throw new IOException("Empty payload");
+    }
+    try {
+      Object unpacked = MarioBytesCodec.unpack(data);
+      if (unpacked instanceof PuElement puElement) {
+        return puElement;
+      }
+      if (unpacked instanceof Map<?, ?> map) {
+        return PuObject.fromObject(copyMap(map));
+      }
+      throw new IOException("Unexpected PuElement root type: " + describeType(unpacked));
+    } catch (IOException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new IOException("Mario unpack failed: " + e.getMessage(), e);
     }
   }
 
@@ -67,5 +91,75 @@ public final class MessagePackHelper {
       MarioBytesCodec.pack(baos, array);
       return baos.toByteArray();
     }
+  }
+
+  private static Map<String, Object> toMap(Object unpacked) {
+    if (unpacked == null) {
+      return Collections.emptyMap();
+    }
+    if (unpacked instanceof PuObject puObject) {
+      return copyMap(puObject.toMap());
+    }
+    if (unpacked instanceof Map<?, ?> map) {
+      return copyMap(map);
+    }
+    if (unpacked instanceof Iterable<?> iterable) {
+      return findFirstMap(iterable);
+    }
+
+    Map<String, Object> reflectedMap = invokeMapMethod(unpacked, "toMap");
+    if (!reflectedMap.isEmpty()) {
+      return reflectedMap;
+    }
+
+    return invokeMapMethod(unpacked, "toObject");
+  }
+
+  private static Map<String, Object> invokeMapMethod(Object target, String methodName) {
+    try {
+      Method method = target.getClass().getMethod(methodName);
+      return toMap(method.invoke(target));
+    } catch (Exception ignored) {
+      return Collections.emptyMap();
+    }
+  }
+
+  private static Map<String, Object> findFirstMap(Iterable<?> iterable) {
+    for (Object item : iterable) {
+      Map<String, Object> nested = toMap(item);
+      if (!nested.isEmpty()) {
+        return nested;
+      }
+    }
+    return Collections.emptyMap();
+  }
+
+  private static Map<String, Object> copyMap(Map<?, ?> map) {
+    Map<String, Object> result = new LinkedHashMap<>();
+    for (Map.Entry<?, ?> entry : map.entrySet()) {
+      result.put(String.valueOf(entry.getKey()), normalizeValue(entry.getValue()));
+    }
+    return result;
+  }
+
+  private static Object normalizeValue(Object value) {
+    if (value instanceof PuObject puObject) {
+      return copyMap(puObject.toMap());
+    }
+    if (value instanceof Map<?, ?> map) {
+      return copyMap(map);
+    }
+    if (value instanceof Iterable<?> iterable) {
+      List<Object> items = new ArrayList<>();
+      for (Object item : iterable) {
+        items.add(normalizeValue(item));
+      }
+      return items;
+    }
+    return value;
+  }
+
+  private static String describeType(Object value) {
+    return value == null ? "null" : value.getClass().getName();
   }
 }
