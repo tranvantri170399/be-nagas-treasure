@@ -92,6 +92,15 @@ public final class ZmqTopicHelper {
    * urn:ws:z:{zone}:s:{sessionId}
    */
   public static String buildTopic(String zone, String sessionId) {
-    return build("ws", zone, null, null, null, sessionId);
+    return build("ws", normalizeZone(zone), null, null, null, sessionId);
+  }
+
+  private static String normalizeZone(String zone) {
+    if (zone == null || zone.isBlank()) {
+      return zone;
+    }
+
+    String normalized = zone.replace("GatewayZone", "");
+    return normalized.isBlank() ? zone : normalized;
   }
 }
