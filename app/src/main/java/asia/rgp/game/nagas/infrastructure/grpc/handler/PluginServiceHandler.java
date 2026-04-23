@@ -316,8 +316,11 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
       zmqPublisher.publish(topic, responseData);
       log.info("[gRPC] Call | published response topic={} session={}", topic, resolvedSessionId);
 
-      observer.onNext(
-          PluginResponse.newBuilder().setResult(ByteString.copyFrom(responseData)).build());
+      // Mirror fruit-respin-mania: deliver the response via ZMQ only and return
+      // an empty gRPC PluginResponse. Previously we also put the bytes into
+      // `result`, which could cause WsProxy to route the payload twice (or pick
+      // the wrong path) and parse against a non-matching envelope shape.
+      observer.onNext(PluginResponse.newBuilder().build());
       observer.onCompleted();
 
     } catch (IllegalArgumentException e) {

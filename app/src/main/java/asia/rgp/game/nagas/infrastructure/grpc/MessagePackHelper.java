@@ -53,10 +53,14 @@ public final class MessagePackHelper {
       if (unpacked instanceof PuElement puElement) {
         return puElement;
       }
-      if (unpacked instanceof Map<?, ?> map) {
-        return PuObject.fromObject(copyMap(map));
-      }
-      throw new IOException("Unexpected PuElement root type: " + describeType(unpacked));
+      // Never silently wrap a Map as PuObject here — encodeResponse packs a
+      // PuArrayList envelope `[5, {...}]` and wrapping the inner map as
+      // PuObject would strip the array wrapper, producing a malformed frame
+      // that WsProxy/client can't parse. Surface the condition loudly.
+      throw new IOException(
+          "Mario unpack did not return PuElement (got "
+              + describeType(unpacked)
+              + ") — frame would lose the [5, ...] envelope wrapper; check encoder/codec version");
     } catch (IOException e) {
       throw e;
     } catch (Exception e) {
