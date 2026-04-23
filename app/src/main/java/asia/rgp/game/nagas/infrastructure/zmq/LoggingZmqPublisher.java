@@ -1,5 +1,6 @@
 package asia.rgp.game.nagas.infrastructure.zmq;
 
+import com.luigi.gaas.common.data.PuElement;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -12,10 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 public class LoggingZmqPublisher implements ZmqPublisherPort {
 
   @Override
-  public void publish(String topic, byte[] payload) {
-    log.info(
-        "[zmq-mock] PUBLISH topic={} payloadSize={} bytes",
-        topic,
-        payload != null ? payload.length : 0);
+  public void publish(String topic, PuElement payload) {
+    log.info("[zmq-mock] PUBLISH topic={} payload={}", topic, payload);
   }
 }

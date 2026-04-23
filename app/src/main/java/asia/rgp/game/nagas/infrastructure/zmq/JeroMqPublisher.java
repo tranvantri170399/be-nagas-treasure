@@ -1,12 +1,10 @@
 package asia.rgp.game.nagas.infrastructure.zmq;
 
-import asia.rgp.game.nagas.infrastructure.grpc.MessagePackHelper;
 import com.luigi.gaas.common.data.PuElement;
 import com.luigi.gaas.common.data.msgpkg.v1.Metadata;
 import com.luigi.gaas.common.data.msgpkg.v1.PuElementMessageFrame;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
-import java.io.IOException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -53,42 +51,19 @@ public class JeroMqPublisher implements ZmqPublisherPort {
   }
 
   @Override
-  public synchronized void publish(String topic, byte[] payload) {
+  public synchronized void publish(String topic, PuElement payload) {
     try {
-      byte[] safePayload = payload == null ? new byte[0] : payload;
-      log.info(
-          "[zmq] PREPARE topic={} payloadSize={} bytes decodedPayload={}",
-          topic,
-          safePayload.length,
-          describePayload(safePayload));
-      byte[] frame = buildFrame(topic, safePayload);
+      if (payload == null) {
+        throw new IllegalArgumentException("Payload must not be null");
+      }
+      log.info("[zmq] PREPARE topic={} payload={}", topic, payload);
+      PuElementMessageFrame messageFrame =
+          new PuElementMessageFrame(new Metadata(topic, null), payload);
+      byte[] frame = messageFrame.toBytes();
       pubSocket.send(frame);
-      log.info(
-          "[zmq] PUBLISHED topic={} payloadSize={} bytes frameSize={} bytes",
-          topic,
-          safePayload.length,
-          frame.length);
+      log.info("[zmq] PUBLISHED topic={} frameSize={} bytes", topic, frame.length);
     } catch (Exception e) {
       log.error("[zmq] Failed to publish topic={}: {}", topic, e.getMessage(), e);
     }
-  }
-
-  private String describePayload(byte[] payload) {
-    if (payload == null || payload.length == 0) {
-      return "<empty>";
-    }
-
-    try {
-      return String.valueOf(MessagePackHelper.decode(payload));
-    } catch (Exception e) {
-      return "<unreadable: " + e.getMessage() + ">";
-    }
-  }
-
-  private byte[] buildFrame(String topic, byte[] payload) throws IOException {
-    PuElement puPayload = MessagePackHelper.unpackPuElement(payload);
-    PuElementMessageFrame messageFrame =
-        new PuElementMessageFrame(new Metadata(topic, null), puPayload);
-    return messageFrame.toBytes();
   }
 }
