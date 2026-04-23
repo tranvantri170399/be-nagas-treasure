@@ -1,7 +1,9 @@
 package asia.rgp.game.nagas.infrastructure.zmq;
 
+import asia.rgp.game.nagas.infrastructure.grpc.MessagePackHelper;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import lombok.extern.slf4j.Slf4j;
@@ -59,15 +61,35 @@ public class JeroMqPublisher implements ZmqPublisherPort {
   @Override
   public synchronized void publish(String topic, byte[] payload) {
     try {
-      byte[] frame = buildFrame(topic, payload);
+      byte[] safePayload = payload == null ? new byte[0] : payload;
+      log.info(
+          "[zmq] PREPARE topic={} payloadSize={} bytes decodedPayload={}",
+          topic,
+          safePayload.length,
+          describePayload(safePayload));
+      byte[] frame = buildFrame(topic, safePayload);
       pubSocket.send(frame);
       log.info(
           "[zmq] PUBLISHED topic={} payloadSize={} bytes frameSize={} bytes",
           topic,
-          payload.length,
+          safePayload.length,
           frame.length);
     } catch (Exception e) {
       log.error("[zmq] Failed to publish topic={}: {}", topic, e.getMessage(), e);
+    }
+  }
+
+  private String describePayload(byte[] payload) {
+    if (payload == null || payload.length == 0) {
+      return "<empty>";
+    }
+
+    try {
+      return String.valueOf(MessagePackHelper.decode(payload));
+    } catch (IOException e) {
+      return "<unreadable: " + e.getMessage() + ">";
+    } catch (Exception e) {
+      return "<unreadable: " + e.getMessage() + ">";
     }
   }
 

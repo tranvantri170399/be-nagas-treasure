@@ -24,8 +24,11 @@ public final class MessagePackHelper {
   /** Decode MessagePack bytes to a Map. */
   public static Map<String, Object> decode(byte[] data) throws IOException {
     if (data == null || data.length == 0) {
+      log.debug("[MPack-Decode] Empty input payload");
       return Collections.emptyMap();
     }
+
+    log.debug("[MPack-Decode] Start decode | size={}", data.length);
 
     Map<String, Object> decodedByMarioCodec = decodeWithMarioBytesCodec(data);
     if (!decodedByMarioCodec.isEmpty()) {
@@ -82,9 +85,16 @@ public final class MessagePackHelper {
   private static Map<String, Object> decodeWithMarioBytesCodec(byte[] data) {
     try {
       Class<?> codecClass = Class.forName("com.luigi.gaas.common.data.msgpkg.MarioBytesCodec");
+      log.debug("[MPack-Decode] Trying Mario bytes codec | size={}", data.length);
       Method unpackMethod = codecClass.getMethod("unpack", byte[].class);
       Object unpacked = unpackMethod.invoke(null, data);
-      return toMap(unpacked);
+      Map<String, Object> result = toMap(unpacked);
+      log.debug(
+          "[MPack-Decode] Mario bytes codec result | size={} type={} keys={}",
+          data.length,
+          unpacked == null ? "null" : unpacked.getClass().getName(),
+          result.keySet());
+      return result;
     } catch (ClassNotFoundException e) {
       log.warn("[MPack-Decode] Mario bytes codec not available on classpath");
     } catch (Exception e) {
@@ -99,16 +109,33 @@ public final class MessagePackHelper {
   private static Map<String, Object> decodeWithMarioExtensionCodec(byte[] data) {
     try (MessageUnpacker unpacker = MessagePack.newDefaultUnpacker(data)) {
       if (!unpacker.hasNext()) {
+        log.debug(
+            "[MPack-Decode] Mario extension codec skipped | no next value | size={}", data.length);
         return Collections.emptyMap();
       }
 
       if (unpacker.getNextFormat().getValueType() != ValueType.EXTENSION) {
+        log.debug(
+            "[MPack-Decode] Mario extension codec skipped | nextType={} size={}",
+            unpacker.getNextFormat().getValueType(),
+            data.length);
         return Collections.emptyMap();
       }
 
       ExtensionTypeHeader header = unpacker.unpackExtensionTypeHeader();
+      log.debug(
+          "[MPack-Decode] Trying Mario extension codec | type={} size={}",
+          header.getType(),
+          data.length);
       Object unpacked = decodeMarioExtension(header.getType(), unpacker);
-      return toMap(unpacked);
+      Map<String, Object> result = toMap(unpacked);
+      log.debug(
+          "[MPack-Decode] Mario extension codec result | type={} size={} unpackedType={} keys={}",
+          header.getType(),
+          data.length,
+          unpacked == null ? "null" : unpacked.getClass().getName(),
+          result.keySet());
+      return result;
 
     } catch (ClassNotFoundException e) {
       log.warn("[MPack-Decode] Mario extension codec manager not available on classpath");
