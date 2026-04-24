@@ -51,6 +51,7 @@ logs/
 .env
 *.env.local
 *.env.*.local
+app/src/main/resources/static/index.html
 
 # Temporary files
 *.tmp
