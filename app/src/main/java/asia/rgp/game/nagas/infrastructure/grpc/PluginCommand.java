@@ -12,6 +12,7 @@ public enum PluginCommand {
   LAST_SESSION(1502, "Get last session state"),
   GET_BALANCE(1503, "Get user balance"),
   GET_SPIN_LIST(1504, "Get spin history list"),
+  JACKPOT_HISTORY(1507, "Get jackpot history"),
   GET_PREV_SPIN(1508, "Get previous spin");
 
   private final int code;
