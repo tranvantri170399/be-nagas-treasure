@@ -928,7 +928,33 @@ public class SpinUseCaseImpl implements SpinUseCase {
     var stateOpt = stateRepository.find(agencyId, userId, gameId);
     double balanceAfter = walletPort.getBalance(agencyId, userId) / 100.0;
     SlotState state = stateOpt.orElse(null);
+
+    boolean isRecoveryFS = state != null && state.isFreeSpinMode();
+    boolean isRecoveryHW = state != null && state.isHoldAndWinMode();
+    boolean isRecovery = isRecoveryFS || isRecoveryHW;
+
+    if (isRecovery) {
+      log.info(
+          "[Recovery] Restoring session | agency={} user={} game={} mode={} accumulatedWin={} remainFS={} remainRespins={} lockedBonuses={}",
+          agencyId,
+          userId,
+          gameId,
+          isRecoveryHW ? "holdAndWin" : "freeSpin",
+          state.getAccumulatedWin(),
+          state.getRemainingFreeSpins(),
+          state.getRemainingRespins(),
+          state.getLockedBonuses() != null ? state.getLockedBonuses().size() : 0);
+    } else {
+      log.info(
+          "[InitialState] Fresh session | agency={} user={} game={} hasState={}",
+          agencyId,
+          userId,
+          gameId,
+          state != null);
+    }
+
     Money displayBet = (state != null) ? state.getBaseBet() : Money.of(1.0);
+    Money accumulatedWin = (state != null) ? Money.of(state.getAccumulatedWin()) : Money.zero();
 
     int[][] gridToUse =
         (state != null && state.getLastGrid() != null)
@@ -944,7 +970,7 @@ public class SpinUseCaseImpl implements SpinUseCase {
         matrix,
         PayoutResult.empty(),
         displayBet,
-        Money.zero(),
+        accumulatedWin,
         Money.zero(),
         Map.of(
             "id",
@@ -956,8 +982,8 @@ public class SpinUseCaseImpl implements SpinUseCase {
         balanceAfter,
         25,
         false,
-        (state != null && state.isFreeSpinMode()),
-        (state != null && state.isHoldAndWinMode()),
+        isRecoveryFS,
+        isRecoveryHW,
         state,
         (state != null ? state.getParentRoundId() : UUID.randomUUID().toString()),
         null);
