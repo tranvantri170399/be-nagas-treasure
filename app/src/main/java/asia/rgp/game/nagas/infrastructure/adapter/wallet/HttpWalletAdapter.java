@@ -165,6 +165,15 @@ public class HttpWalletAdapter extends BaseRestClientAdapter implements WalletPo
       throw new DomainException("Wallet transfer rejected: " + message, mapped);
     }
 
+    log.info(
+        "[Wallet] transfer response | action={} transactionId={} agencyTransactionId={} amountBefore={} amountAfter={} status={}",
+        action,
+        item.getTransactionId(),
+        item.getAgencyTransactionId(),
+        item.getAmountBefore(),
+        item.getAmountAfter(),
+        itemStatus);
+
     return item;
   }
 

@@ -89,3 +89,6 @@ coverage/
 # Build reports
 build/reports/
 
+.windsurfrules
+.vscode/
+doc_websocket.MD
