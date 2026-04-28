@@ -70,6 +70,15 @@ public class ConnectHandler {
         zoneId);
 
     SlotResultResponse result = spinUseCase.getInitialState(agencyId, userId, gameId, sessionId);
+    log.info(
+        "[ConnectHandler] JOIN done | agency={} user={} game={} session={} balance={}",
+        agencyId,
+        userId,
+        gameId,
+        sessionId,
+        result.getData() != null && result.getData().getControl() != null
+            ? result.getData().getControl().getBalance()
+            : null);
 
     Map<String, Object> resultMap = objectMapper.convertValue(result, Map.class);
     return MessagePackHelper.encodeResponse(

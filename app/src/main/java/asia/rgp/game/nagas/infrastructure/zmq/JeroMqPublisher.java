@@ -56,7 +56,7 @@ public class JeroMqPublisher implements ZmqPublisherPort {
       if (payload == null) {
         throw new IllegalArgumentException("Payload must not be null");
       }
-      log.info("[zmq] PREPARE topic={} payload={}", topic, payload);
+      // log.info("[zmq] PREPARE topic={} payload={}", topic, payload);
       PuElementMessageFrame messageFrame =
           new PuElementMessageFrame(new Metadata(topic, null), payload);
       byte[] frame = messageFrame.toBytes();

@@ -86,6 +86,20 @@ public class SpinHandler {
             .build();
 
     SlotResultResponse result = spinUseCase.execute(command);
+    log.info(
+        "[SpinHandler] SPIN done | agency={} user={} session={} totalWin={} balance={} nextMode={}",
+        agencyId,
+        userId,
+        sessionId,
+        result.getData() != null && result.getData().getRound() != null
+            ? result.getData().getRound().getTotalWin()
+            : null,
+        result.getData() != null && result.getData().getControl() != null
+            ? result.getData().getControl().getBalance()
+            : null,
+        result.getData() != null && result.getData().getRound() != null
+            ? result.getData().getRound().getNextMode()
+            : null);
     Map<String, Object> resultMap = objectMapper.convertValue(result, Map.class);
     return MessagePackHelper.encodeResponse(PluginCommand.SPIN.getCode(), resultMap);
   }
@@ -126,7 +140,18 @@ public class SpinHandler {
         SlotConstants.FEATURE_HOLD_AND_WIN.equalsIgnoreCase(feature)
             ? spinUseCase.executeBuyHoldAndWin(command)
             : spinUseCase.executeBuyFeature(command);
-
+    log.info(
+        "[SpinHandler] BUY_FEATURE done | agency={} user={} session={} feature={} totalWin={} balance={}",
+        agencyId,
+        userId,
+        sessionId,
+        feature,
+        result.getData() != null && result.getData().getRound() != null
+            ? result.getData().getRound().getTotalWin()
+            : null,
+        result.getData() != null && result.getData().getControl() != null
+            ? result.getData().getControl().getBalance()
+            : null);
     Map<String, Object> resultMap = objectMapper.convertValue(result, Map.class);
     return MessagePackHelper.encodeResponse(PluginCommand.BUY_FEATURE.getCode(), resultMap);
   }
