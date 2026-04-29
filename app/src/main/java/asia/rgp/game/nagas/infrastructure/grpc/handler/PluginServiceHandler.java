@@ -25,8 +25,10 @@ import asia.rgp.game.nagas.infrastructure.grpc.generated.SyncSessionsResponse;
 import asia.rgp.game.nagas.infrastructure.grpc.generated.ZmqMetadata;
 import asia.rgp.game.nagas.infrastructure.grpc.generated.ZmqResponse;
 import asia.rgp.game.nagas.infrastructure.zmq.ZmqPublisherPort;
+import asia.rgp.game.nagas.modules.slot.application.port.out.JackpotHistoryPort;
 import asia.rgp.game.nagas.modules.slot.application.port.out.SlotHistoryPort;
 import asia.rgp.game.nagas.modules.slot.application.port.out.WalletPort;
+import asia.rgp.game.nagas.modules.slot.domain.model.JackpotHistory;
 import asia.rgp.game.nagas.modules.slot.domain.model.SlotHistory;
 import asia.rgp.game.nagas.shared.domain.exception.DomainException;
 import asia.rgp.game.nagas.shared.error.ErrorCode;
@@ -85,6 +87,7 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
   private final ConnectHandler connectHandler;
   private final ZmqPublisherPort zmqPublisher;
   private final WalletPort walletPort;
+  private final JackpotHistoryPort jackpotHistoryPort;
   private final SlotHistoryPort slotHistoryPort;
   private final PluginSessionStore sessionStore;
 
@@ -560,6 +563,17 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
                     slotHistoryPort.findByUser(agencyId, userId, gameId, limit, offset))));
       }
 
+      case JACKPOT_HISTORY -> {
+        String agencyId =
+            payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
+        int limit = intValue(payload.get("limit"), 50);
+        log.info("[gRPC] routeToHandler | JACKPOT_HISTORY agencyId={} limit={}", agencyId, limit);
+        List<JackpotHistory> histories = jackpotHistoryPort.findByAgencyId(agencyId, limit);
+        yield MessagePackHelper.encodeResponse(
+            PluginCommand.JACKPOT_HISTORY.getCode(),
+            Map.of("history", toJackpotHistoryRows(histories), "total", histories.size()));
+      }
+
       case GET_PREV_SPIN -> {
         String agencyId =
             payloadString(payload, "agency_id", "agencyId", "agent_id", "agentId", "");
@@ -647,6 +661,31 @@ public class PluginServiceHandler extends PluginServiceGrpc.PluginServiceImplBas
     row.put("totalWin", toDouble(history.getTotalWin()));
     row.put("timestamp", history.getTimestamp() != null ? history.getTimestamp().toString() : null);
     row.put("mode", String.valueOf(history.getThisMode()));
+    return row;
+  }
+
+  private List<Map<String, Object>> toJackpotHistoryRows(List<JackpotHistory> histories) {
+    List<Map<String, Object>> rows = new ArrayList<>();
+    if (histories == null) {
+      return rows;
+    }
+    for (JackpotHistory history : histories) {
+      rows.add(jackpotHistoryRow(history));
+    }
+    return rows;
+  }
+
+  private Map<String, Object> jackpotHistoryRow(JackpotHistory history) {
+    Map<String, Object> row = new LinkedHashMap<>();
+    row.put("id", history.getId());
+    row.put("winId", history.getWinId());
+    row.put("agencyId", history.getAgencyId());
+    row.put("userId", history.getUserId());
+    row.put("username", history.getUsername());
+    row.put("sessionId", history.getSessionId());
+    row.put("jackpotType", history.getJackpotType());
+    row.put("amount", history.getAmount());
+    row.put("createdAt", history.getCreatedAt() != null ? history.getCreatedAt().toString() : null);
     return row;
   }
 

@@ -966,6 +966,289 @@ class SpinUseCaseGameModesTest {
   }
 
   // ============================================================
+  // 7. GAME RECOVERY (US 7.3) TESTS
+  // ============================================================
+
+  @Nested
+  @DisplayName("7. Game Recovery (US 7.3)")
+  class GameRecoveryTests {
+
+    @Test
+    @DisplayName("7.1 Fresh session — no state — returns base mode with zero totalWin")
+    void freshSessionReturnsBase() {
+      when(stateRepository.find(AGENT_A, USER_1, GAME_ID)).thenReturn(Optional.empty());
+
+      SlotResultResponse resp = useCase.getInitialState(AGENT_A, USER_1, GAME_ID, SESSION_1);
+
+      assertEquals("base", resp.getData().getRound().getResult().getThisMode());
+      assertEquals("base", resp.getData().getRound().getResult().getNextMode());
+      assertEquals("0.00", resp.getData().getRound().getTotalWin());
+      assertEquals("1.00", resp.getData().getRound().getTotalBet());
+      assertTrue(resp.getData().getRound().isEndsSuperround());
+    }
+
+    @Test
+    @DisplayName("7.2 Recovery during free spin — restores mode, bet, accumulated win")
+    void recoveryDuringFreeSpin() {
+      SlotState fsState =
+          SlotState.builder()
+              .agencyId(AGENT_A)
+              .userId(USER_1)
+              .gameId(GAME_ID)
+              .sessionId(SESSION_1)
+              .totalFreeSpins(8)
+              .remainingFreeSpins(5)
+              .baseBet(Money.of(5.0))
+              .freeSpinMode(true)
+              .parentRoundId("trigger-round-1")
+              .triggerRoundId("trigger-round-1")
+              .baseRoundNumber(3)
+              .accumulatedWin(42.50)
+              .lastGrid(
+                  new int[][] {
+                    {5, 6, 7, 8, 5},
+                    {6, 7, 8, 5, 6},
+                    {7, 8, 5, 6, 7}
+                  })
+              .build();
+      when(stateRepository.find(AGENT_A, USER_1, GAME_ID)).thenReturn(Optional.of(fsState));
+
+      SlotResultResponse resp = useCase.getInitialState(AGENT_A, USER_1, GAME_ID, SESSION_1);
+
+      // Mode should be free → free
+      assertEquals("free", resp.getData().getRound().getResult().getThisMode());
+      assertEquals("free", resp.getData().getRound().getResult().getNextMode());
+      assertFalse(resp.getData().getRound().isEndsSuperround());
+
+      // Accumulated win must be preserved
+      assertEquals("42.50", resp.getData().getRound().getTotalWin());
+      assertEquals("42.50", resp.getData().getRound().getResult().getSuperRound().getTotalWin());
+
+      // Bet from trigger spin
+      assertEquals("5.00", resp.getData().getRound().getTotalBet());
+
+      // Free spin feature info
+      @SuppressWarnings("unchecked")
+      Map<String, Object> fsFeature =
+          (Map<String, Object>)
+              resp.getData().getRound().getResult().getFeatures().get("freeSpins");
+      assertNotNull(fsFeature, "freeSpins feature should be present");
+      assertEquals(5, fsFeature.get("remain"));
+      assertEquals(8, fsFeature.get("total"));
+    }
+
+    @Test
+    @DisplayName(
+        "7.3 Recovery during hold-and-win — restores locked bonuses, respins, accumulated win")
+    void recoveryDuringHoldAndWin() {
+      List<SlotState.LockedBonus> locked = new ArrayList<>();
+      locked.add(new SlotState.LockedBonus(0, 0, 13, 5.0, "CASH"));
+      locked.add(new SlotState.LockedBonus(0, 2, 13, 3.0, "CASH"));
+      locked.add(new SlotState.LockedBonus(1, 1, 11, 0.0, "MAJOR"));
+      locked.add(new SlotState.LockedBonus(1, 3, 13, 7.0, "CASH"));
+      locked.add(new SlotState.LockedBonus(2, 0, 13, 2.0, "CASH"));
+      locked.add(new SlotState.LockedBonus(2, 4, 13, 10.0, "CASH"));
+
+      SlotState hwState =
+          SlotState.builder()
+              .agencyId(AGENT_A)
+              .userId(USER_1)
+              .gameId(GAME_ID)
+              .sessionId(SESSION_1)
+              .holdAndWin(true)
+              .remainingRespins(2)
+              .lockedBonuses(locked)
+              .baseBet(Money.of(10.0))
+              .parentRoundId("trigger-round-2")
+              .triggerRoundId("trigger-round-2")
+              .baseRoundNumber(5)
+              .accumulatedWin(15.0)
+              .lastGrid(
+                  new int[][] {
+                    {13, 0, 13, 0, 0},
+                    {0, 11, 0, 13, 0},
+                    {13, 0, 0, 0, 13}
+                  })
+              .build();
+      when(stateRepository.find(AGENT_A, USER_1, GAME_ID)).thenReturn(Optional.of(hwState));
+
+      SlotResultResponse resp = useCase.getInitialState(AGENT_A, USER_1, GAME_ID, SESSION_1);
+
+      // Mode should be holdAndWin → holdAndWin
+      assertEquals("holdAndWin", resp.getData().getRound().getResult().getThisMode());
+      assertEquals("holdAndWin", resp.getData().getRound().getResult().getNextMode());
+      assertFalse(resp.getData().getRound().isEndsSuperround());
+
+      // Accumulated win preserved
+      assertEquals("15.00", resp.getData().getRound().getTotalWin());
+
+      // Bet from trigger spin
+      assertEquals("10.00", resp.getData().getRound().getTotalBet());
+
+      // H&W feature info
+      @SuppressWarnings("unchecked")
+      Map<String, Object> hwFeature =
+          (Map<String, Object>)
+              resp.getData().getRound().getResult().getFeatures().get("holdAndWin");
+      assertNotNull(hwFeature, "holdAndWin feature should be present");
+      assertEquals(2, hwFeature.get("respinsRemain"));
+      assertFalse((Boolean) hwFeature.get("isEnding"));
+
+      @SuppressWarnings("unchecked")
+      List<?> bonuses = (List<?>) hwFeature.get("lockedBonuses");
+      assertEquals(6, bonuses.size(), "All 6 locked bonuses must be restored");
+    }
+
+    @Test
+    @DisplayName("7.4 Recovery restores lastGrid from state (not random)")
+    void recoveryRestoresLastGrid() {
+      int[][] savedGrid =
+          new int[][] {
+            {1, 2, 3, 4, 5},
+            {5, 4, 3, 2, 1},
+            {2, 3, 4, 5, 6}
+          };
+      SlotState fsState =
+          SlotState.builder()
+              .agencyId(AGENT_A)
+              .userId(USER_1)
+              .gameId(GAME_ID)
+              .sessionId(SESSION_1)
+              .totalFreeSpins(8)
+              .remainingFreeSpins(3)
+              .baseBet(Money.of(1.0))
+              .freeSpinMode(true)
+              .parentRoundId("parent-1")
+              .baseRoundNumber(1)
+              .accumulatedWin(5.0)
+              .lastGrid(savedGrid)
+              .build();
+      when(stateRepository.find(AGENT_A, USER_1, GAME_ID)).thenReturn(Optional.of(fsState));
+
+      SlotResultResponse resp = useCase.getInitialState(AGENT_A, USER_1, GAME_ID, SESSION_1);
+
+      // Screen is transposed [cols][rows], so screen[0] = column 0 = {1, 5, 2}
+      int[][] screen = resp.getData().getRound().getResult().getStages().get(0).getScreen();
+      assertNotNull(screen);
+      assertEquals(5, screen.length, "5 columns");
+      assertEquals(3, screen[0].length, "3 rows per column");
+      // Verify column 0 contains values from savedGrid column 0 = {1, 5, 2}
+      assertEquals(1, screen[0][0]);
+      assertEquals(5, screen[0][1]);
+      assertEquals(2, screen[0][2]);
+    }
+
+    @Test
+    @DisplayName("7.5 Recovery does NOT debit or credit wallet")
+    void recoveryDoesNotTouchWallet() {
+      SlotState fsState =
+          SlotState.builder()
+              .agencyId(AGENT_A)
+              .userId(USER_1)
+              .gameId(GAME_ID)
+              .sessionId(SESSION_1)
+              .totalFreeSpins(8)
+              .remainingFreeSpins(5)
+              .baseBet(Money.of(1.0))
+              .freeSpinMode(true)
+              .parentRoundId("parent-1")
+              .baseRoundNumber(1)
+              .accumulatedWin(10.0)
+              .build();
+      when(stateRepository.find(AGENT_A, USER_1, GAME_ID)).thenReturn(Optional.of(fsState));
+
+      useCase.getInitialState(AGENT_A, USER_1, GAME_ID, SESSION_1);
+
+      // Only getBalance should be called — no debit or credit
+      verify(walletPort).getBalance(AGENT_A, USER_1);
+      verify(walletPort, never()).debit(anyString(), anyString(), any(), anyString());
+      verify(walletPort, never()).credit(anyString(), anyString(), any(), anyString());
+    }
+
+    @Test
+    @DisplayName("7.6 Recovery does NOT modify SlotState in Redis")
+    void recoveryDoesNotModifyState() {
+      SlotState hwState = buildHwState(AGENT_A, USER_1, 2, 6);
+      hwState.setAccumulatedWin(20.0);
+      when(stateRepository.find(AGENT_A, USER_1, GAME_ID)).thenReturn(Optional.of(hwState));
+
+      useCase.getInitialState(AGENT_A, USER_1, GAME_ID, SESSION_1);
+
+      verify(stateRepository, never()).save(any());
+      verify(stateRepository, never()).delete(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("7.7 Recovery does NOT save game history")
+    void recoveryDoesNotSaveHistory() {
+      SlotState fsState =
+          SlotState.builder()
+              .agencyId(AGENT_A)
+              .userId(USER_1)
+              .gameId(GAME_ID)
+              .sessionId(SESSION_1)
+              .totalFreeSpins(8)
+              .remainingFreeSpins(3)
+              .baseBet(Money.of(1.0))
+              .freeSpinMode(true)
+              .parentRoundId("parent-1")
+              .baseRoundNumber(1)
+              .accumulatedWin(7.0)
+              .build();
+      when(stateRepository.find(AGENT_A, USER_1, GAME_ID)).thenReturn(Optional.of(fsState));
+
+      useCase.getInitialState(AGENT_A, USER_1, GAME_ID, SESSION_1);
+
+      verify(historyPort, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("7.8 After recovery, next SPIN continues the chain normally")
+    void afterRecoverySpinContinuesChain() {
+      SlotState fsState =
+          SlotState.builder()
+              .agencyId(AGENT_A)
+              .userId(USER_1)
+              .gameId(GAME_ID)
+              .sessionId(SESSION_1)
+              .totalFreeSpins(8)
+              .remainingFreeSpins(4)
+              .baseBet(Money.of(2.0))
+              .freeSpinMode(true)
+              .parentRoundId("parent-1")
+              .triggerRoundId("trigger-1")
+              .baseRoundNumber(1)
+              .accumulatedWin(12.0)
+              .build();
+      when(stateRepository.find(AGENT_A, USER_1, GAME_ID)).thenReturn(Optional.of(fsState));
+
+      // Step 1: Recovery
+      SlotResultResponse recoveryResp =
+          useCase.getInitialState(AGENT_A, USER_1, GAME_ID, SESSION_1);
+      assertEquals("free", recoveryResp.getData().getRound().getResult().getThisMode());
+      assertEquals("12.00", recoveryResp.getData().getRound().getTotalWin());
+
+      // Step 2: Next spin should continue free spin chain (state still has remainingFS=4)
+      SlotResultResponse spinResp = useCase.execute(spinCmd(AGENT_A, USER_1, SESSION_1, 2.0));
+      assertEquals("free", spinResp.getData().getRound().getResult().getThisMode());
+
+      // No debit during free spin
+      verify(walletPort, never()).debit(anyString(), anyString(), any(), anyString());
+
+      // State should be saved with decremented free spins
+      ArgumentCaptor<SlotState> stateCaptor = ArgumentCaptor.forClass(SlotState.class);
+      verify(stateRepository).save(stateCaptor.capture());
+      assertEquals(3, stateCaptor.getValue().getRemainingFreeSpins());
+
+      // Accumulated win should be >= previous 12.00
+      double superWin =
+          Double.parseDouble(
+              spinResp.getData().getRound().getResult().getSuperRound().getTotalWin());
+      assertTrue(superWin >= 12.0, "Accumulated win should be >= previous 12.00");
+    }
+  }
+
+  // ============================================================
   // HELPERS
   // ============================================================
 
