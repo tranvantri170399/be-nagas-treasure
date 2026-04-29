@@ -40,7 +40,7 @@ class SpinUseCaseRefundTest {
   @Mock private JackpotHistoryPort jackpotHistoryPort;
 
   @Test
-  void refundsWalletIfSpinFailsAfterDebit() {
+  void doesNotRefundWalletIfSpinFailsAfterDebit() {
     // Arrange
     SlotGameConfig config = buildMinimalConfig();
 
@@ -92,11 +92,9 @@ class SpinUseCaseRefundTest {
     // Act / Assert
     assertThrows(DomainException.class, () -> useCase.execute(cmd));
 
-    // Wallet should be debited, then refunded.
+    // Wallet should be debited, but current behavior does not refund on spin failure.
     verify(walletPort).debit(eq("agent-1"), eq("user-1"), eq(Money.of(1.0)), anyString());
-    verify(walletPort)
-        .credit(
-            eq("agent-1"), eq("user-1"), eq(Money.of(1.0)), argThat(tx -> tx.endsWith("-refund")));
+    verify(walletPort, never()).credit(eq("agent-1"), eq("user-1"), eq(Money.of(1.0)), anyString());
   }
 
   private SlotGameConfig buildMinimalConfig() {

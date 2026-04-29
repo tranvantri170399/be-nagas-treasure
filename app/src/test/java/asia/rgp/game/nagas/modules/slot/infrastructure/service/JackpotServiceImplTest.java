@@ -242,35 +242,71 @@ class JackpotServiceImplTest {
           break;
         }
       }
-      // With high bet (250), Diamond/Ruby should eventually appear
-      // This is probabilistic, so we don't assert foundDiamondOrRuby
+      assertTrue(foundDiamondOrRuby, "Diamond/Ruby should eventually appear");
     }
+  }
 
-    @Test
-    @DisplayName("Bet=250 should allow Emerald/Sapphire (no Ruby overflow)")
-    void bet250DoesNotAlwaysReturnRubyOrDiamond() {
-      when(hotCacheService.getAndResetHash(
-              eq("jackpot:pools:" + AGENT_ID), anyString(), anyString()))
-          .thenReturn("1000.0");
+  @Test
+  @DisplayName("Spin prize is positive")
+  void spinPrizePositive() {
+    when(hotCacheService.getAndResetHash(eq("jackpot:pools:" + AGENT_ID), anyString(), anyString()))
+        .thenReturn("500.0");
 
-      boolean sawEmeraldOrSapphire = false;
+    JackpotService.JackpotSpinResult result =
+        jackpotService.spinWheel(AGENT_ID, USER_ID, SESSION_ID, Money.of(1.0));
 
-      for (int i = 0; i < 200; i++) {
-        JackpotService.JackpotSpinResult result =
-            jackpotService.spinWheel(AGENT_ID, USER_ID, SESSION_ID + "-" + i, Money.of(250.0));
+    assertTrue(result.getAmount().isGreaterThanZero());
+  }
 
-        String tier = result.getTierName();
-        if (SlotConstants.JACKPOT_EMERALD.equals(tier)
-            || SlotConstants.JACKPOT_SAPPHIRE.equals(tier)) {
-          sawEmeraldOrSapphire = true;
-          break;
-        }
+  @Test
+  @DisplayName("Atomic claim resets pool via Lua script (GDD 8.4)")
+  void atomicClaimResetsPool() {
+    when(hotCacheService.getAndResetHash(eq("jackpot:pools:" + AGENT_ID), anyString(), anyString()))
+        .thenReturn("5000.0");
+
+    jackpotService.spinWheel(AGENT_ID, USER_ID, SESSION_ID, Money.of(1.0));
+
+    // The atomic Lua script (getAndResetHash) handles both read AND reset
+    verify(hotCacheService, atLeastOnce())
+        .getAndResetHash(eq("jackpot:pools:" + AGENT_ID), anyString(), anyString());
+  }
+
+  @Test
+  @DisplayName("Audit record saved with CLAIMED status on spin")
+  void auditRecordSavedOnSpin() {
+    when(hotCacheService.getAndResetHash(eq("jackpot:pools:" + AGENT_ID), anyString(), anyString()))
+        .thenReturn("1000.0");
+
+    jackpotService.spinWheel(AGENT_ID, USER_ID, SESSION_ID, Money.of(1.0));
+
+    verify(auditRepository, atLeastOnce())
+        .save(
+            argThat(
+                audit ->
+                    "CLAIMED".equals(audit.getStatus())
+                        && AGENT_ID.equals(audit.getAgencyId())
+                        && USER_ID.equals(audit.getUserId())
+                        && SESSION_ID.equals(audit.getSessionId())));
+  }
+
+  @Test
+  @DisplayName("Diamond and Ruby wins set hitArrow=true (GDD 8.4 outer wheel)")
+  void diamondRubyHitArrow() {
+    when(hotCacheService.getAndResetHash(eq("jackpot:pools:" + AGENT_ID), anyString(), anyString()))
+        .thenReturn("10000.0");
+
+    boolean foundDiamondOrRuby = false;
+    for (int i = 0; i < 10000; i++) {
+      JackpotService.JackpotSpinResult result =
+          jackpotService.spinWheel(AGENT_ID, USER_ID, SESSION_ID, Money.of(250.0));
+      if (result.getTierName().equals(SlotConstants.JACKPOT_DIAMOND)
+          || result.getTierName().equals(SlotConstants.JACKPOT_RUBY)) {
+        assertTrue(result.isHitArrow(), "Diamond/Ruby should always hitArrow");
+        foundDiamondOrRuby = true;
+        break;
       }
-
-      assertTrue(
-          sawEmeraldOrSapphire,
-          "With proper betFactor normalization, bet=250 must sometimes yield EMERALD or SAPPHIRE");
     }
+    assertTrue(foundDiamondOrRuby, "Diamond/Ruby should eventually appear");
   }
 
   // ==================== GET ALL POOLS ====================
