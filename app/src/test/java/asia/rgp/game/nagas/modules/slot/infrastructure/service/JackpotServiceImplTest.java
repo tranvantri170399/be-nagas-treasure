@@ -245,6 +245,32 @@ class JackpotServiceImplTest {
       // With high bet (250), Diamond/Ruby should eventually appear
       // This is probabilistic, so we don't assert foundDiamondOrRuby
     }
+
+    @Test
+    @DisplayName("Bet=250 should allow Emerald/Sapphire (no Ruby overflow)")
+    void bet250DoesNotAlwaysReturnRubyOrDiamond() {
+      when(hotCacheService.getAndResetHash(
+              eq("jackpot:pools:" + AGENT_ID), anyString(), anyString()))
+          .thenReturn("1000.0");
+
+      boolean sawEmeraldOrSapphire = false;
+
+      for (int i = 0; i < 200; i++) {
+        JackpotService.JackpotSpinResult result =
+            jackpotService.spinWheel(AGENT_ID, USER_ID, SESSION_ID + "-" + i, Money.of(250.0));
+
+        String tier = result.getTierName();
+        if (SlotConstants.JACKPOT_EMERALD.equals(tier)
+            || SlotConstants.JACKPOT_SAPPHIRE.equals(tier)) {
+          sawEmeraldOrSapphire = true;
+          break;
+        }
+      }
+
+      assertTrue(
+          sawEmeraldOrSapphire,
+          "With proper betFactor normalization, bet=250 must sometimes yield EMERALD or SAPPHIRE");
+    }
   }
 
   // ==================== GET ALL POOLS ====================

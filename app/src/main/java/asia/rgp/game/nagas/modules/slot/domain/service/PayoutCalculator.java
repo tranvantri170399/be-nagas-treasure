@@ -3,9 +3,9 @@ package asia.rgp.game.nagas.modules.slot.domain.service;
 import asia.rgp.game.nagas.modules.slot.domain.model.*;
 import asia.rgp.game.nagas.shared.domain.model.Matrix;
 import asia.rgp.game.nagas.shared.domain.model.Money;
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Random;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -13,7 +13,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class PayoutCalculator {
 
-  private final Random random = new Random();
+  private final SecureRandom random = new SecureRandom();
 
   /** Calculates the general payout result for a spin. */
   public PayoutResult calculate(Matrix matrix, SlotGameConfig config, Money totalBet) {
